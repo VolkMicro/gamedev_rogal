@@ -1,21 +1,37 @@
 const STICK_RADIUS = 40;
+const AIM_DEADZONE = 8;
 
 /**
- * Left-half virtual stick for horizontal movement, tap-anywhere for jump.
- * The full left-stick/right-aim scheme from the GDD lands with the wand in
- * stage 2; this stage only needs run + jump.
+ * Left half: virtual stick for horizontal movement (up-hold levitation lands
+ * later, once its resource cost is balanced — see GDD open questions).
+ * Right half: aim stick — hold and drag to aim, direction + magnitude expose
+ * as aimX/aimY/aiming for the wand to read every frame.
+ * Jump has its own corner button since the final control scheme (GDD §6)
+ * doesn't reserve a gesture for it.
  */
 export class InputController {
   moveX = 0;
-  private jumpQueued = false;
-  private stickPointerId: number | null = null;
-  private stickOriginX = 0;
+  aimX = 0;
+  aimY = 0;
+  aiming = false;
 
-  constructor(el: HTMLElement) {
+  private jumpQueued = false;
+  private movePointerId: number | null = null;
+  private moveOriginX = 0;
+  private aimPointerId: number | null = null;
+  private aimOriginX = 0;
+  private aimOriginY = 0;
+  private keys = new Set<string>();
+
+  constructor(el: HTMLElement, jumpButton: HTMLElement) {
     el.addEventListener('pointerdown', this.onPointerDown, { passive: true });
     el.addEventListener('pointermove', this.onPointerMove, { passive: true });
     el.addEventListener('pointerup', this.onPointerUp, { passive: true });
     el.addEventListener('pointercancel', this.onPointerUp, { passive: true });
+    jumpButton.addEventListener('pointerdown', (e) => {
+      e.stopPropagation();
+      this.jumpQueued = true;
+    });
     window.addEventListener('keydown', this.onKeyDown);
     window.addEventListener('keyup', this.onKeyUp);
   }
@@ -27,48 +43,86 @@ export class InputController {
     return j;
   }
 
-  private keys = new Set<string>();
-
   private onKeyDown = (e: KeyboardEvent) => {
     this.keys.add(e.code);
     if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') this.jumpQueued = true;
     this.updateKeyboardMove();
+    this.updateKeyboardAim();
   };
 
   private onKeyUp = (e: KeyboardEvent) => {
     this.keys.delete(e.code);
     this.updateKeyboardMove();
+    this.updateKeyboardAim();
   };
 
   private updateKeyboardMove(): void {
-    if (this.stickPointerId !== null) return;
+    if (this.movePointerId !== null) return;
     let x = 0;
     if (this.keys.has('ArrowLeft') || this.keys.has('KeyA')) x -= 1;
     if (this.keys.has('ArrowRight') || this.keys.has('KeyD')) x += 1;
     this.moveX = x;
   }
 
+  /** IJKL aims/fires on desktop, since there's no second pointer without a touchscreen. */
+  private updateKeyboardAim(): void {
+    if (this.aimPointerId !== null) return;
+    let x = 0;
+    let y = 0;
+    if (this.keys.has('KeyJ')) x -= 1;
+    if (this.keys.has('KeyL')) x += 1;
+    if (this.keys.has('KeyI')) y -= 1;
+    if (this.keys.has('KeyK')) y += 1;
+    this.aiming = x !== 0 || y !== 0;
+    if (this.aiming) {
+      const len = Math.hypot(x, y);
+      this.aimX = x / len;
+      this.aimY = y / len;
+    }
+  }
+
   private onPointerDown = (e: PointerEvent) => {
     const isLeftHalf = e.clientX < window.innerWidth / 2;
-    if (isLeftHalf && this.stickPointerId === null) {
-      this.stickPointerId = e.pointerId;
-      this.stickOriginX = e.clientX;
-    } else if (!isLeftHalf) {
-      this.jumpQueued = true;
+    if (isLeftHalf) {
+      if (this.movePointerId !== null) return;
+      this.movePointerId = e.pointerId;
+      this.moveOriginX = e.clientX;
+    } else {
+      if (this.aimPointerId !== null) return;
+      this.aimPointerId = e.pointerId;
+      this.aimOriginX = e.clientX;
+      this.aimOriginY = e.clientY;
     }
   };
 
   private onPointerMove = (e: PointerEvent) => {
-    if (e.pointerId !== this.stickPointerId) return;
-    const dx = e.clientX - this.stickOriginX;
-    const clamped = Math.max(-STICK_RADIUS, Math.min(STICK_RADIUS, dx));
-    this.moveX = clamped / STICK_RADIUS;
+    if (e.pointerId === this.movePointerId) {
+      const dx = e.clientX - this.moveOriginX;
+      const clamped = Math.max(-STICK_RADIUS, Math.min(STICK_RADIUS, dx));
+      this.moveX = clamped / STICK_RADIUS;
+    } else if (e.pointerId === this.aimPointerId) {
+      const dx = e.clientX - this.aimOriginX;
+      const dy = e.clientY - this.aimOriginY;
+      const dist = Math.hypot(dx, dy);
+      if (dist >= AIM_DEADZONE) {
+        this.aiming = true;
+        this.aimX = dx / dist;
+        this.aimY = dy / dist;
+      } else {
+        this.aiming = false;
+      }
+    }
   };
 
   private onPointerUp = (e: PointerEvent) => {
-    if (e.pointerId !== this.stickPointerId) return;
-    this.stickPointerId = null;
-    this.moveX = 0;
-    this.updateKeyboardMove();
+    if (e.pointerId === this.movePointerId) {
+      this.movePointerId = null;
+      this.moveX = 0;
+      this.updateKeyboardMove();
+    } else if (e.pointerId === this.aimPointerId) {
+      this.aimPointerId = null;
+      this.aiming = false;
+      this.updateKeyboardAim();
+    }
   };
 }

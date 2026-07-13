@@ -1,4 +1,5 @@
 import { Graphics } from 'pixi.js';
+import { Material } from '../sim/materials';
 import type { World } from '../sim/world';
 
 const MOVE_ACCEL = 260;
@@ -8,27 +9,55 @@ const GRAVITY = 340;
 const MAX_FALL_SPEED = 220;
 const JUMP_VELOCITY = -125;
 
-const HALF_WIDTH = 4;
-const HALF_HEIGHT = 7;
+export const PLAYER_HALF_WIDTH = 4;
+export const PLAYER_HALF_HEIGHT = 7;
+
+const MAX_HP = 100;
+const FIRE_DPS = 18;
+const INVULN_AFTER_HIT = 0.6;
 
 /** Placeholder box character (real sprite arrives with art in a later stage). */
 export class Player {
   x: number;
   y: number;
+  hp = MAX_HP;
+  readonly maxHp = MAX_HP;
+  dead = false;
   private vx = 0;
   private vy = 0;
   private grounded = false;
+  private invulnTimer = 0;
   readonly sprite: Graphics;
 
   constructor(spawnX: number, spawnY: number) {
     this.x = spawnX;
     this.y = spawnY;
     this.sprite = new Graphics()
-      .rect(-HALF_WIDTH, -HALF_HEIGHT, HALF_WIDTH * 2, HALF_HEIGHT * 2)
+      .rect(-PLAYER_HALF_WIDTH, -PLAYER_HALF_HEIGHT, PLAYER_HALF_WIDTH * 2, PLAYER_HALF_HEIGHT * 2)
       .fill(0xe8d9b0);
   }
 
+  respawn(x: number, y: number): void {
+    this.x = x;
+    this.y = y;
+    this.vx = 0;
+    this.vy = 0;
+    this.hp = MAX_HP;
+    this.dead = false;
+    this.invulnTimer = 0;
+  }
+
+  takeDamage(amount: number): void {
+    if (this.invulnTimer > 0 || this.dead) return;
+    this.hp = Math.max(0, this.hp - amount);
+    this.invulnTimer = INVULN_AFTER_HIT;
+    if (this.hp <= 0) this.dead = true;
+  }
+
   update(dt: number, moveX: number, jumpPressed: boolean, world: World): void {
+    if (this.dead) return;
+    if (this.invulnTimer > 0) this.invulnTimer -= dt;
+
     if (moveX !== 0) {
       this.vx += moveX * MOVE_ACCEL * dt;
       this.vx = Math.max(-MAX_MOVE_SPEED, Math.min(MAX_MOVE_SPEED, this.vx));
@@ -49,6 +78,11 @@ export class Player {
 
     this.sprite.x = this.x;
     this.sprite.y = this.y;
+
+    if (world.get(Math.floor(this.x), Math.floor(this.y)) === Material.Fire) {
+      this.hp = Math.max(0, this.hp - FIRE_DPS * dt);
+      if (this.hp <= 0) this.dead = true;
+    }
   }
 
   /** Moves one axis at a time and resolves collision against solid cells; returns true if blocked. */
@@ -67,10 +101,10 @@ export class Player {
   }
 
   private collidesAt(cx: number, cy: number, world: World): boolean {
-    const left = Math.floor(cx - HALF_WIDTH);
-    const right = Math.floor(cx + HALF_WIDTH - 1);
-    const top = Math.floor(cy - HALF_HEIGHT);
-    const bottom = Math.floor(cy + HALF_HEIGHT - 1);
+    const left = Math.floor(cx - PLAYER_HALF_WIDTH);
+    const right = Math.floor(cx + PLAYER_HALF_WIDTH - 1);
+    const top = Math.floor(cy - PLAYER_HALF_HEIGHT);
+    const bottom = Math.floor(cy + PLAYER_HALF_HEIGHT - 1);
     return (
       world.isSolidForPlayer(left, top) ||
       world.isSolidForPlayer(right, top) ||

@@ -47,6 +47,12 @@ export class World {
     return this.material[this.idx(x, y)] as Material;
   }
 
+  /** Bulk-fills the whole grid without per-cell chunk bookkeeping. Only for level generation, before the first step(). */
+  fillAll(mat: Material): void {
+    this.material.fill(mat);
+    this.aux.fill(0);
+  }
+
   /** Sets a cell directly and wakes its chunk (+ neighbor chunks if on a border). Use for scene setup / spawners. */
   set(x: number, y: number, mat: Material, aux = 0): void {
     if (!this.inBounds(x, y)) return;
