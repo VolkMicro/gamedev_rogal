@@ -7,17 +7,21 @@ import { Assets, Rectangle, Texture } from 'pixi.js';
  * creature. Each entry below is a hand-picked (col,row) cell in the
  * relevant sheet; sheets ending in 0/1 are the two animation frames.
  */
+// import.meta.env.BASE_URL matches Vite's `base` config ('/' in dev, '/gamedev_rogal/' in
+// the GitHub Pages build) — plain '/dawnlike/...' strings aren't rewritten by Vite the way
+// HTML/CSS asset references are, so this has to be applied by hand or the built site 404s.
+const BASE = import.meta.env.BASE_URL;
 const SHEET_PATHS = {
-  player0: '/dawnlike/Characters/Player0.png',
-  player1: '/dawnlike/Characters/Player1.png',
-  rodent0: '/dawnlike/Characters/Rodent0.png',
-  rodent1: '/dawnlike/Characters/Rodent1.png',
-  pest0: '/dawnlike/Characters/Pest0.png',
-  pest1: '/dawnlike/Characters/Pest1.png',
-  undead0: '/dawnlike/Characters/Undead0.png',
-  undead1: '/dawnlike/Characters/Undead1.png',
-  demon0: '/dawnlike/Characters/Demon0.png',
-  demon1: '/dawnlike/Characters/Demon1.png',
+  player0: `${BASE}dawnlike/Characters/Player0.png`,
+  player1: `${BASE}dawnlike/Characters/Player1.png`,
+  rodent0: `${BASE}dawnlike/Characters/Rodent0.png`,
+  rodent1: `${BASE}dawnlike/Characters/Rodent1.png`,
+  pest0: `${BASE}dawnlike/Characters/Pest0.png`,
+  pest1: `${BASE}dawnlike/Characters/Pest1.png`,
+  undead0: `${BASE}dawnlike/Characters/Undead0.png`,
+  undead1: `${BASE}dawnlike/Characters/Undead1.png`,
+  demon0: `${BASE}dawnlike/Characters/Demon0.png`,
+  demon1: `${BASE}dawnlike/Characters/Demon1.png`,
 } as const;
 type SheetKey = keyof typeof SHEET_PATHS;
 
