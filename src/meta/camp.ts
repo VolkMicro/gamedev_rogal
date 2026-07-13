@@ -53,14 +53,12 @@ export class Camp {
     const btn = document.createElement('button');
     btn.textContent = label;
     btn.disabled = disabled;
+    btn.className = 'kenney-btn';
     Object.assign(btn.style, {
       display: 'block',
       width: '100%',
-      margin: '4px 0',
-      padding: '8px',
-      font: '12px monospace',
+      margin: '6px 0',
       textAlign: 'left',
-      opacity: disabled ? '0.5' : '1',
     } satisfies Partial<CSSStyleDeclaration>);
     btn.addEventListener('click', onClick);
     return btn;
@@ -166,10 +164,7 @@ export class Camp {
     this.save.wandLoadout.forEach((spell, i) => {
       const slotBtn = document.createElement('button');
       slotBtn.textContent = SPELL_LABELS[spell];
-      Object.assign(slotBtn.style, {
-        padding: '8px',
-        font: '12px monospace',
-      } satisfies Partial<CSSStyleDeclaration>);
+      slotBtn.className = 'kenney-btn';
       slotBtn.addEventListener('click', () => {
         const known = this.save.unlockedSpells;
         const cur = known.indexOf(spell);
@@ -183,6 +178,7 @@ export class Camp {
     loadoutSection.appendChild(row);
 
     const startBtn = this.button('Начать забег ▶', false, () => this.onStartRun());
+    startBtn.classList.add('kenney-btn-primary');
     Object.assign(startBtn.style, { marginTop: '16px', padding: '14px', font: '15px monospace' } satisfies Partial<CSSStyleDeclaration>);
     this.el.appendChild(startBtn);
   }

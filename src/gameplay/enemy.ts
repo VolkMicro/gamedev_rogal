@@ -1,8 +1,9 @@
-import { Graphics } from 'pixi.js';
+import { Sprite } from 'pixi.js';
 import { Material } from '../sim/materials';
 import type { World } from '../sim/world';
 import type { EnemyKind } from '../sim/generation';
 import type { Player } from './player';
+import { enemyTexture } from '../render/sprites';
 
 export type AnyEnemyKind = EnemyKind | 'boss';
 
@@ -10,21 +11,21 @@ interface EnemyStats {
   hp: number;
   contactDamage: number;
   speed: number;
-  color: number;
   radius: number;
 }
 
 const STATS: Record<AnyEnemyKind, EnemyStats> = {
-  mole: { hp: 20, contactDamage: 6, speed: 34, color: 0x9c6b4a, radius: 4 },
-  beetle: { hp: 16, contactDamage: 8, speed: 24, color: 0x4a7c3f, radius: 3.5 },
-  collapser: { hp: 12, contactDamage: 5, speed: 0, color: 0x6a4a7c, radius: 4 },
-  boss: { hp: 150, contactDamage: 16, speed: 46, color: 0xb23a3a, radius: 9 },
+  mole: { hp: 20, contactDamage: 6, speed: 34, radius: 4 },
+  beetle: { hp: 16, contactDamage: 8, speed: 24, radius: 3.5 },
+  collapser: { hp: 12, contactDamage: 5, speed: 0, radius: 4 },
+  boss: { hp: 150, contactDamage: 16, speed: 46, radius: 9 },
 };
 
 const CONTACT_COOLDOWN = 0.8;
 const AGGRO_RANGE = 130;
 const BOSS_AGGRO_RANGE = 220;
 const BOSS_SLAM_INTERVAL = 3;
+const ANIM_INTERVAL = 0.4;
 
 export class Enemy {
   x: number;
@@ -34,7 +35,7 @@ export class Enemy {
   dead = false;
   readonly kind: AnyEnemyKind;
   readonly hitRadius: number;
-  readonly sprite: Graphics;
+  readonly sprite: Sprite;
   /** Set true once dead so main.ts can trigger one-shot death effects (fire burst, victory, ...). */
   justDied = false;
 
@@ -43,6 +44,8 @@ export class Enemy {
   private contactCooldown = 0;
   private collapserTimer = 1.5 + Math.random() * 1.5;
   private bossSlamTimer = BOSS_SLAM_INTERVAL;
+  private animFrame: 0 | 1 = 0;
+  private animTimer = Math.random() * ANIM_INTERVAL;
 
   constructor(x: number, y: number, kind: AnyEnemyKind) {
     this.x = x;
@@ -52,7 +55,8 @@ export class Enemy {
     this.hp = stats.hp;
     this.maxHp = stats.hp;
     this.hitRadius = stats.radius;
-    this.sprite = new Graphics().circle(0, 0, stats.radius).fill(stats.color);
+    this.sprite = new Sprite(enemyTexture(kind));
+    this.sprite.anchor.set(0.5, 0.5);
     this.sprite.x = x;
     this.sprite.y = y;
   }
@@ -79,6 +83,13 @@ export class Enemy {
     else if (this.kind === 'collapser') this.updateCollapser(dt, world, player, dxToPlayer, distToPlayer);
     else this.updateBoss(dt, world, player, dxToPlayer, distToPlayer);
 
+    this.animTimer += dt;
+    if (this.animTimer >= ANIM_INTERVAL) {
+      this.animTimer = 0;
+      this.animFrame = this.animFrame === 0 ? 1 : 0;
+      this.sprite.texture = enemyTexture(this.kind, this.animFrame);
+    }
+    this.sprite.scale.x = this.facing;
     this.sprite.x = this.x;
     this.sprite.y = this.y;
 

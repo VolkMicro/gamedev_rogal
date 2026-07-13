@@ -28,6 +28,27 @@
       #app canvas {
         display: block;
       }
+      .kenney-btn {
+        border-style: solid;
+        border-width: 14px;
+        border-image-source: url(/ui/button_grey.png);
+        border-image-slice: 20 fill;
+        border-image-width: 14px;
+        background: transparent;
+        color: #f0ead8;
+        font: 13px 'Courier New', monospace;
+        padding: 6px 8px;
+        cursor: pointer;
+      }
+      .kenney-btn:disabled {
+        filter: grayscale(0.6) brightness(0.6);
+      }
+      .kenney-btn-primary {
+        border-image-source: url(/ui/button_red.png);
+      }
+      .kenney-btn:active:not(:disabled) {
+        filter: brightness(0.85);
+      }
     </style>
   </head>
   <body>

@@ -14,6 +14,7 @@ import { StatsOverlay } from './perf/statsOverlay';
 import { Hud } from './gameplay/hud';
 import { loadSave, persistSave } from './meta/save';
 import { Camp } from './meta/camp';
+import { loadSprites } from './render/sprites';
 
 const VIEWPORT_WIDTH = 400;
 const VIEWPORT_HEIGHT = 240;
@@ -37,19 +38,19 @@ async function main(): Promise<void> {
 
   const stage = new Stage(VIEWPORT_WIDTH, VIEWPORT_HEIGHT);
   await stage.init(appEl);
+  await loadSprites();
 
   const simRenderer = new SimRenderer(VIEWPORT_WIDTH, VIEWPORT_HEIGHT);
   stage.world.addChild(simRenderer.sprite);
 
   const jumpButton = document.createElement('button');
   jumpButton.textContent = 'Прыжок';
+  jumpButton.className = 'kenney-btn';
   Object.assign(jumpButton.style, {
     position: 'fixed',
     right: '12px',
     bottom: '12px',
     zIndex: '10',
-    padding: '10px 16px',
-    font: '13px monospace',
   } satisfies Partial<CSSStyleDeclaration>);
   document.body.appendChild(jumpButton);
 

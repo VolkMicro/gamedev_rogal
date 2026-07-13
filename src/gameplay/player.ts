@@ -1,6 +1,9 @@
-import { Graphics } from 'pixi.js';
+import { Sprite } from 'pixi.js';
 import { Material } from '../sim/materials';
 import type { World } from '../sim/world';
+import { playerTexture } from '../render/sprites';
+
+const WALK_FRAME_INTERVAL = 0.18;
 
 const MOVE_ACCEL = 260;
 const MAX_MOVE_SPEED = 55;
@@ -28,14 +31,16 @@ export class Player {
   private grounded = false;
   private invulnTimer = 0;
   private fireResist = 0;
-  readonly sprite: Graphics;
+  private walkTimer = 0;
+  private legsApart = false;
+  private facing = 1;
+  readonly sprite: Sprite;
 
   constructor(spawnX: number, spawnY: number) {
     this.x = spawnX;
     this.y = spawnY;
-    this.sprite = new Graphics()
-      .rect(-PLAYER_HALF_WIDTH, -PLAYER_HALF_HEIGHT, PLAYER_HALF_WIDTH * 2, PLAYER_HALF_HEIGHT * 2)
-      .fill(0xe8d9b0);
+    this.sprite = new Sprite(playerTexture(false));
+    this.sprite.anchor.set(0.5, 0.5);
   }
 
   /** Applies camp perk levels (GDD §2 perk branch) before a run starts. fireResist: 0..1 damage multiplier reduction. */
@@ -83,6 +88,19 @@ export class Player {
     this.grounded = landed && this.vy >= 0;
     if (this.grounded) this.vy = 0;
 
+    if (Math.abs(this.vx) > 2) {
+      this.walkTimer += dt;
+      if (this.walkTimer >= WALK_FRAME_INTERVAL) {
+        this.walkTimer = 0;
+        this.legsApart = !this.legsApart;
+        this.sprite.texture = playerTexture(this.legsApart);
+      }
+      this.facing = this.vx > 0 ? 1 : -1;
+    } else if (this.legsApart) {
+      this.legsApart = false;
+      this.sprite.texture = playerTexture(false);
+    }
+    this.sprite.scale.x = this.facing;
     this.sprite.x = this.x;
     this.sprite.y = this.y;
 
