@@ -37,11 +37,8 @@ async function main(): Promise<void> {
   appEl.innerHTML = '';
 
   const stage = new Stage(VIEWPORT_WIDTH, VIEWPORT_HEIGHT);
-  console.log('[wick] stage constructed, calling init...');
   await stage.init(appEl);
-  console.log('[wick] stage.init done, loading sprites...');
   await loadSprites();
-  console.log('[wick] sprites loaded');
 
   const simRenderer = new SimRenderer(VIEWPORT_WIDTH, VIEWPORT_HEIGHT);
   stage.world.addChild(simRenderer.sprite);
