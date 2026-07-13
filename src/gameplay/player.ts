@@ -21,12 +21,13 @@ export class Player {
   x: number;
   y: number;
   hp = MAX_HP;
-  readonly maxHp = MAX_HP;
+  maxHp = MAX_HP;
   dead = false;
   private vx = 0;
   private vy = 0;
   private grounded = false;
   private invulnTimer = 0;
+  private fireResist = 0;
   readonly sprite: Graphics;
 
   constructor(spawnX: number, spawnY: number) {
@@ -37,12 +38,18 @@ export class Player {
       .fill(0xe8d9b0);
   }
 
+  /** Applies camp perk levels (GDD §2 perk branch) before a run starts. fireResist: 0..1 damage multiplier reduction. */
+  setPerks(bonusMaxHp: number, fireResist: number): void {
+    this.maxHp = MAX_HP + bonusMaxHp;
+    this.fireResist = Math.max(0, Math.min(0.9, fireResist));
+  }
+
   respawn(x: number, y: number): void {
     this.x = x;
     this.y = y;
     this.vx = 0;
     this.vy = 0;
-    this.hp = MAX_HP;
+    this.hp = this.maxHp;
     this.dead = false;
     this.invulnTimer = 0;
   }
@@ -80,7 +87,7 @@ export class Player {
     this.sprite.y = this.y;
 
     if (world.get(Math.floor(this.x), Math.floor(this.y)) === Material.Fire) {
-      this.hp = Math.max(0, this.hp - FIRE_DPS * dt);
+      this.hp = Math.max(0, this.hp - FIRE_DPS * (1 - this.fireResist) * dt);
       if (this.hp <= 0) this.dead = true;
     }
   }

@@ -12,6 +12,8 @@ import { Wand } from './gameplay/wand';
 import { InputController } from './gameplay/input';
 import { StatsOverlay } from './perf/statsOverlay';
 import { Hud } from './gameplay/hud';
+import { loadSave, persistSave } from './meta/save';
+import { Camp } from './meta/camp';
 
 const VIEWPORT_WIDTH = 400;
 const VIEWPORT_HEIGHT = 240;
@@ -54,25 +56,44 @@ async function main(): Promise<void> {
   const input = new InputController(stage.app.canvas, jumpButton);
   const stats = new StatsOverlay();
   const hud = new Hud();
-  const wand = new Wand();
+
+  const save = loadSave();
+  let wand = new Wand(save.wandLoadout);
 
   let world = new World(WORLD_WIDTH, WORLD_HEIGHT);
   const player = new Player(0, 0);
   stage.world.addChild(player.sprite);
 
   let enemies: Enemy[] = [];
+  let boss: Enemy | null = null;
   let pickups: EssencePickup[] = [];
   let projectiles: Projectile[] = [];
-  let essence = 0;
+  let runEssence = 0;
   let runSeed = 1;
+  let running = false;
 
-  function startRun(seed: number): void {
+  const camp = new Camp(save, () => {
+    wand = new Wand(save.wandLoadout);
+    player.setPerks((save.perkLevels.maxHp ?? 0) * 10, (save.perkLevels.fireResist ?? 0) * 0.25);
+    startRun(runSeed);
+    camp.hide();
+    running = true;
+  });
+
+  function clearRunObjects(): void {
     for (const e of enemies) stage.world.removeChild(e.sprite);
+    if (boss) stage.world.removeChild(boss.sprite);
     for (const p of pickups) stage.world.removeChild(p.sprite);
     for (const p of projectiles) stage.world.removeChild(p.sprite);
     enemies = [];
+    boss = null;
     pickups = [];
     projectiles = [];
+  }
+
+  function startRun(seed: number): void {
+    clearRunObjects();
+    runEssence = 0;
 
     world = new World(WORLD_WIDTH, WORLD_HEIGHT);
     const level = generateMinesLevel(world, seed);
@@ -90,30 +111,49 @@ async function main(): Promise<void> {
       pickups.push({ x: spawn.x, y: spawn.y, sprite, collected: false });
       stage.world.addChild(sprite);
     }
+    boss = new Enemy(level.bossSpawn.x, level.bossSpawn.y, 'boss');
+    stage.world.addChild(boss.sprite);
   }
 
-  startRun(runSeed);
+  function endRun(outcome: 'death' | 'victory'): void {
+    running = false;
+    save.essenceBanked += runEssence;
+    if (outcome === 'death') save.deaths += 1;
+    else save.runsCompleted += 1;
+    persistSave(save);
+    runSeed += 1;
+    clearRunObjects();
+    camp.show();
+  }
 
   let accumulatorMs = 0;
 
   stage.app.ticker.add((ticker) => {
     const dtMs = ticker.deltaMS;
     const dtSec = dtMs / 1000;
+    if (!running) return;
 
     wand.tick(dtSec);
     player.update(dtSec, input.moveX, input.consumeJump(), world);
 
     if (input.aiming && !player.dead) {
-      const spell = wand.tryCast();
-      if (spell) {
-        const proj = new Projectile(player.x, player.y, input.aimX, input.aimY, spell);
-        projectiles.push(proj);
-        stage.world.addChild(proj.sprite);
+      const cast = wand.tryCast();
+      if (cast) {
+        const homing = cast.modifiers.includes('homing');
+        const angle = Math.atan2(input.aimY, input.aimX);
+        const spreadAngles = cast.modifiers.includes('triple') ? [-0.28, 0, 0.28] : [0];
+        for (const spread of spreadAngles) {
+          const a = angle + spread;
+          const proj = new Projectile(player.x, player.y, Math.cos(a), Math.sin(a), cast.spell, homing);
+          projectiles.push(proj);
+          stage.world.addChild(proj.sprite);
+        }
       }
     }
 
-    for (const enemy of enemies) enemy.update(dtSec, world, player);
-    for (const enemy of enemies) {
+    const allEnemies = boss ? [...enemies, boss] : enemies;
+    for (const enemy of allEnemies) enemy.update(dtSec, world, player);
+    for (const enemy of allEnemies) {
       if (enemy.justDied) {
         enemy.justDied = false;
         if (enemy.kind === 'beetle') {
@@ -136,7 +176,7 @@ async function main(): Promise<void> {
       });
     }
 
-    for (const proj of projectiles) proj.update(dtSec, world, enemies);
+    for (const proj of projectiles) proj.update(dtSec, world, allEnemies);
     if (projectiles.some((p) => p.dead)) {
       projectiles = projectiles.filter((p) => {
         if (p.dead) stage.world.removeChild(p.sprite);
@@ -148,7 +188,7 @@ async function main(): Promise<void> {
       if (pickup.collected) continue;
       if (Math.hypot(pickup.x - player.x, pickup.y - player.y) < 10) {
         pickup.collected = true;
-        essence += 1;
+        runEssence += 1;
         stage.world.removeChild(pickup.sprite);
       }
     }
@@ -162,16 +202,19 @@ async function main(): Promise<void> {
 
     stage.updateCamera(player.x, player.y, WORLD_WIDTH, WORLD_HEIGHT);
     for (const enemy of enemies) enemy.sprite.visible = stage.isInView(enemy.x, enemy.y);
+    if (boss) boss.sprite.visible = stage.isInView(boss.x, boss.y);
     for (const pickup of pickups) pickup.sprite.visible = stage.isInView(pickup.x, pickup.y);
     for (const proj of projectiles) proj.sprite.visible = stage.isInView(proj.x, proj.y);
     const viewOrigin = stage.getViewOriginWorld();
     simRenderer.render(world, viewOrigin.x, viewOrigin.y);
-    hud.update(player.hp, player.maxHp, essence);
+    hud.update(player.hp, player.maxHp, runEssence);
     stats.frame(dtMs, world.activeChunkCount(), world.totalChunkCount());
 
     if (player.dead) {
-      runSeed += 1;
-      startRun(runSeed);
+      endRun('death');
+    } else if (boss && boss.dead) {
+      runEssence += 25; // boss kill bonus
+      endRun('victory');
     }
   });
 }

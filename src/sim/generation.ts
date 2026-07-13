@@ -8,6 +8,7 @@ export interface GeneratedLevel {
   spawnY: number;
   enemySpawns: Array<{ x: number; y: number; kind: EnemyKind }>;
   essenceSpawns: Array<{ x: number; y: number }>;
+  bossSpawn: { x: number; y: number };
 }
 
 function mulberry32(seed: number): () => number {
@@ -39,6 +40,12 @@ export function generateMinesLevel(world: World, seed: number): GeneratedLevel {
       for (let dx = -r; dx <= r; dx++) {
         if (dx * dx + dy * dy <= r2) world.set(cx + dx, cy + dy, Material.Empty);
       }
+    }
+  };
+
+  const carveRect = (left: number, top: number, width: number, height: number): void => {
+    for (let py = top; py < top + height; py++) {
+      for (let px = left; px < left + width; px++) world.set(px, py, Material.Empty);
     }
   };
 
@@ -105,7 +112,18 @@ export function generateMinesLevel(world: World, seed: number): GeneratedLevel {
     }
   }
 
-  carveCircle(x, h - 10, 20);
+  // Boss arena: a flat-floored room at the bottom of the shaft.
+  const arenaW = 140;
+  const arenaH = 70;
+  const arenaLeft = Math.max(20, Math.min(w - arenaW - 20, x - arenaW / 2));
+  const arenaTop = h - arenaH - 8;
+  carveRect(arenaLeft, arenaTop, arenaW, arenaH);
+  for (let bx = arenaLeft - 2; bx <= arenaLeft + arenaW + 2; bx++) {
+    world.set(bx, arenaTop + arenaH, Material.Stone);
+  }
+  // Connect the shaft's last position into the arena.
+  carveCircle(x, arenaTop, 14);
+  const bossSpawn = { x: arenaLeft + arenaW / 2, y: arenaTop + arenaH - 20 };
 
-  return { spawnX, spawnY, enemySpawns, essenceSpawns };
+  return { spawnX, spawnY, enemySpawns, essenceSpawns, bossSpawn };
 }

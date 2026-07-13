@@ -1,33 +1,53 @@
-import type { SpellId } from './projectile';
+import { isModifierSpell, type ModifierSpellId, type ProjectileSpellId, type SpellId } from './projectile';
 
 const CAST_COOLDOWN = 0.35;
 
+export interface CastResult {
+  spell: ProjectileSpellId;
+  modifiers: ModifierSpellId[];
+}
+
 /**
- * Minimal stand-in for the Noita-style wand: a fixed slot sequence cast
- * round-robin. Full crafting (modifiers, player-assembled slots) is stage 3.
+ * Noita-style wand: slots execute left-to-right, wrapping. Modifier spells
+ * (triple/homing) don't fire on their own — they attach to the next
+ * projectile spell found in the sequence. Full crafting UI (drag slots
+ * around) is a later stage; for now the loadout is fixed at cast-time via
+ * the camp hub (see meta/save.ts wandLoadout).
  */
 export class Wand {
   private slots: SpellId[];
   private nextSlot = 0;
   private cooldown = 0;
 
-  constructor(slots: SpellId[] = ['spark', 'spark', 'saw', 'bomb']) {
-    this.slots = slots;
+  constructor(slots: SpellId[]) {
+    this.slots = slots.length > 0 ? slots : ['spark'];
   }
 
-  get currentSpell(): SpellId {
-    return this.slots[this.nextSlot];
+  setSlots(slots: SpellId[]): void {
+    this.slots = slots.length > 0 ? slots : ['spark'];
+    this.nextSlot = 0;
   }
 
   tick(dt: number): void {
     if (this.cooldown > 0) this.cooldown -= dt;
   }
 
-  tryCast(): SpellId | null {
+  tryCast(): CastResult | null {
     if (this.cooldown > 0) return null;
-    const spell = this.slots[this.nextSlot];
-    this.nextSlot = (this.nextSlot + 1) % this.slots.length;
-    this.cooldown = CAST_COOLDOWN;
-    return spell;
+
+    const modifiers: ModifierSpellId[] = [];
+    for (let i = 0; i < this.slots.length; i++) {
+      const idx = (this.nextSlot + i) % this.slots.length;
+      const spell = this.slots[idx];
+      if (isModifierSpell(spell)) {
+        modifiers.push(spell);
+        continue;
+      }
+      this.nextSlot = (idx + 1) % this.slots.length;
+      this.cooldown = CAST_COOLDOWN;
+      return { spell, modifiers };
+    }
+    // Wand is all modifiers with nothing to attach to — nothing happens.
+    return null;
   }
 }
