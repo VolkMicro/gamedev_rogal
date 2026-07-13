@@ -22,18 +22,34 @@ export class InputController {
   private aimOriginX = 0;
   private aimOriginY = 0;
   private keys = new Set<string>();
+  private el: HTMLElement;
 
   constructor(el: HTMLElement, jumpButton: HTMLElement) {
-    el.addEventListener('pointerdown', this.onPointerDown, { passive: true });
-    el.addEventListener('pointermove', this.onPointerMove, { passive: true });
-    el.addEventListener('pointerup', this.onPointerUp, { passive: true });
-    el.addEventListener('pointercancel', this.onPointerUp, { passive: true });
+    this.el = el;
+    // Not passive: a drag can otherwise trigger the browser's native
+    // image/canvas drag gesture or text selection, which silently steals
+    // the rest of the pointer sequence (looks like "aiming randomly stops
+    // working" on real devices/desktop mice even though the state machine
+    // itself is correct — reproduced this cleanly with synthetic events).
+    el.addEventListener('pointerdown', this.onPointerDown);
+    el.addEventListener('pointermove', this.onPointerMove);
+    el.addEventListener('pointerup', this.onPointerUp);
+    el.addEventListener('pointercancel', this.onPointerUp);
+    el.addEventListener('contextmenu', (e) => e.preventDefault());
     jumpButton.addEventListener('pointerdown', (e) => {
       e.stopPropagation();
+      e.preventDefault();
       this.jumpQueued = true;
     });
     window.addEventListener('keydown', this.onKeyDown);
     window.addEventListener('keyup', this.onKeyUp);
+    // If the window/webview loses focus mid-drag (alt-tab, Telegram
+    // backgrounding the app, OS gesture, ...) no pointerup ever arrives and
+    // the stick would otherwise stay stuck firing/moving forever.
+    window.addEventListener('blur', this.resetAll);
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) this.resetAll();
+    });
   }
 
   /** Call once per frame; clears the one-shot jump flag. */
@@ -42,6 +58,14 @@ export class InputController {
     this.jumpQueued = false;
     return j;
   }
+
+  private resetAll = (): void => {
+    this.movePointerId = null;
+    this.aimPointerId = null;
+    this.moveX = 0;
+    this.aiming = false;
+    this.keys.clear();
+  };
 
   private onKeyDown = (e: KeyboardEvent) => {
     this.keys.add(e.code);
@@ -93,6 +117,11 @@ export class InputController {
       this.aimOriginX = e.clientX;
       this.aimOriginY = e.clientY;
     }
+    // Guarantees this pointer's move/up events keep targeting `el` even if
+    // it strays outside the element's bounds mid-drag — without this a fast
+    // drag can "escape" and stop delivering events, leaving the stick stuck.
+    this.el.setPointerCapture(e.pointerId);
+    e.preventDefault();
   };
 
   private onPointerMove = (e: PointerEvent) => {
@@ -100,6 +129,7 @@ export class InputController {
       const dx = e.clientX - this.moveOriginX;
       const clamped = Math.max(-STICK_RADIUS, Math.min(STICK_RADIUS, dx));
       this.moveX = clamped / STICK_RADIUS;
+      e.preventDefault();
     } else if (e.pointerId === this.aimPointerId) {
       const dx = e.clientX - this.aimOriginX;
       const dy = e.clientY - this.aimOriginY;
@@ -111,6 +141,7 @@ export class InputController {
       } else {
         this.aiming = false;
       }
+      e.preventDefault();
     }
   };
 

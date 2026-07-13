@@ -37,8 +37,11 @@ async function main(): Promise<void> {
   appEl.innerHTML = '';
 
   const stage = new Stage(VIEWPORT_WIDTH, VIEWPORT_HEIGHT);
+  console.log('[wick] stage constructed, calling init...');
   await stage.init(appEl);
+  console.log('[wick] stage.init done, loading sprites...');
   await loadSprites();
+  console.log('[wick] sprites loaded');
 
   const simRenderer = new SimRenderer(VIEWPORT_WIDTH, VIEWPORT_HEIGHT);
   stage.world.addChild(simRenderer.sprite);
@@ -126,6 +129,40 @@ async function main(): Promise<void> {
     clearRunObjects();
     camp.show();
   }
+
+  // Dev/test-only introspection hook — lets an external Playwright bot drive
+  // and observe a run without guessing state from pixels. See tests/playthrough.
+  interface WickDebug {
+    state(): {
+      inCamp: boolean;
+      player: { x: number; y: number; hp: number; maxHp: number; dead: boolean };
+      boss: { x: number; y: number; hp: number; maxHp: number; dead: boolean } | null;
+      enemies: Array<{ x: number; y: number; hp: number; kind: string }>;
+      worldHeight: number;
+      essence: number;
+    };
+    startRun(seed: number): void;
+    /** True if (player.x+dx, player.y+dy) is open (not solid) — lets a test bot feel out terrain instead of moving blind. */
+    isOpen(dx: number, dy: number): boolean;
+    input: InputController;
+  }
+  (window as unknown as { __wickDebug: WickDebug }).__wickDebug = {
+    state: () => ({
+      inCamp: !running,
+      player: { x: player.x, y: player.y, hp: player.hp, maxHp: player.maxHp, dead: player.dead, ...player.debugPhysics() },
+      boss: boss ? { x: boss.x, y: boss.y, hp: boss.hp, maxHp: boss.maxHp, dead: boss.dead } : null,
+      enemies: enemies.map((e) => ({ x: e.x, y: e.y, hp: e.hp, kind: e.kind })),
+      worldHeight: WORLD_HEIGHT,
+      essence: runEssence,
+    }),
+    startRun: (seed: number) => {
+      startRun(seed);
+      camp.hide();
+      running = true;
+    },
+    isOpen: (dx: number, dy: number) => !world.isSolidForPlayer(Math.floor(player.x + dx), Math.floor(player.y + dy)),
+    input,
+  };
 
   let accumulatorMs = 0;
 

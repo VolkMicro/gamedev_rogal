@@ -22,6 +22,7 @@ function mulberry32(seed: number): () => number {
 }
 
 const ENEMY_KINDS: EnemyKind[] = ['mole', 'beetle', 'collapser'];
+const SAFE_ZONE_DEPTH = 130;
 
 /**
  * Carves a winding vertical shaft (drunkard's walk) through solid stone, with
@@ -75,7 +76,10 @@ export function generateMinesLevel(world: World, seed: number): GeneratedLevel {
       for (let bx = Math.min(x, roomX); bx <= Math.max(x, roomX); bx++) {
         world.set(bx, y - Math.max(radius, roomR) - 1, Material.Wood);
       }
-      if (rand() < 0.6) {
+      // No enemies in the first stretch below spawn — gives the player a
+      // moment to get their bearings before the first real threat instead of
+      // risking an ambush a few seconds into the run.
+      if (rand() < 0.6 && y - spawnY > SAFE_ZONE_DEPTH) {
         const kind = ENEMY_KINDS[Math.floor(rand() * ENEMY_KINDS.length)];
         enemySpawns.push({ x: roomX, y: y - roomR + 6, kind });
       }
@@ -89,7 +93,10 @@ export function generateMinesLevel(world: World, seed: number): GeneratedLevel {
 
     if (rand() < 0.03) {
       const poolR = 10 + Math.floor(rand() * 8);
-      const poolCy = y + radius + poolR - 2;
+      // Offset clear of the tunnel (not just barely outside it) — water is a
+      // liquid once the sim starts running, so any overlap floods straight
+      // down the shaft instead of staying a contained pocket.
+      const poolCy = y + radius + poolR + 6;
       carveCircle(x, poolCy, poolR);
       for (let px = x - poolR; px <= x + poolR; px++) {
         for (let py = poolCy - poolR; py <= poolCy + poolR; py++) {
@@ -101,7 +108,10 @@ export function generateMinesLevel(world: World, seed: number): GeneratedLevel {
     if (rand() < 0.03) {
       const sandR = 8 + Math.floor(rand() * 6);
       const side = rand() < 0.5 ? -1 : 1;
-      const sx = x + side * (radius + sandR - 2);
+      // Same reasoning as the water pool above: sand is a powder that falls
+      // once the sim runs, so a pocket placed flush against the tunnel wall
+      // can slide/cascade into the path and bury it. Clear offset instead.
+      const sx = x + side * (radius + sandR + 6);
       for (let px = sx - sandR; px <= sx + sandR; px++) {
         for (let py = y - sandR; py <= y + sandR; py++) {
           if ((px - sx) ** 2 + (py - y) ** 2 <= sandR * sandR && world.get(px, py) === Material.Stone) {

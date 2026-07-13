@@ -17,7 +17,10 @@ export const PLAYER_HALF_HEIGHT = 7;
 
 const MAX_HP = 100;
 const FIRE_DPS = 18;
-const INVULN_AFTER_HIT = 0.6;
+const INVULN_AFTER_HIT = 0.8;
+const KNOCKBACK_SPEED = 90;
+const KNOCKBACK_POP = 40;
+const KNOCKBACK_DURATION = 0.22;
 
 /** Placeholder box character (real sprite arrives with art in a later stage). */
 export class Player {
@@ -34,6 +37,7 @@ export class Player {
   private walkTimer = 0;
   private legsApart = false;
   private facing = 1;
+  private knockbackTimer = 0;
   readonly sprite: Sprite;
 
   constructor(spawnX: number, spawnY: number) {
@@ -41,6 +45,10 @@ export class Player {
     this.y = spawnY;
     this.sprite = new Sprite(playerTexture(false));
     this.sprite.anchor.set(0.5, 0.5);
+  }
+
+  debugPhysics(): { vx: number; vy: number; grounded: boolean; knockbackTimer: number } {
+    return { vx: this.vx, vy: this.vy, grounded: this.grounded, knockbackTimer: this.knockbackTimer };
   }
 
   /** Applies camp perk levels (GDD §2 perk branch) before a run starts. fireResist: 0..1 damage multiplier reduction. */
@@ -57,6 +65,7 @@ export class Player {
     this.hp = this.maxHp;
     this.dead = false;
     this.invulnTimer = 0;
+    this.knockbackTimer = 0;
   }
 
   takeDamage(amount: number): void {
@@ -66,11 +75,25 @@ export class Player {
     if (this.hp <= 0) this.dead = true;
   }
 
+  /** Shoves the player away from a hit source so contact damage can't glue them in place. */
+  knockback(dirX: number, dirY: number): void {
+    this.vx = dirX * KNOCKBACK_SPEED;
+    this.vy = dirY * KNOCKBACK_SPEED - KNOCKBACK_POP;
+    // Without this, the very next frame's moveX-driven acceleration/clamp
+    // (max speed 55 < knockback speed 90) instantly overrides the shove
+    // whenever any movement key is held — which is most of the time — so
+    // the "escape" never actually happened. This briefly locks out normal
+    // movement control so the shove has time to create real separation.
+    this.knockbackTimer = KNOCKBACK_DURATION;
+  }
+
   update(dt: number, moveX: number, jumpPressed: boolean, world: World): void {
     if (this.dead) return;
     if (this.invulnTimer > 0) this.invulnTimer -= dt;
 
-    if (moveX !== 0) {
+    if (this.knockbackTimer > 0) {
+      this.knockbackTimer -= dt;
+    } else if (moveX !== 0) {
       this.vx += moveX * MOVE_ACCEL * dt;
       this.vx = Math.max(-MAX_MOVE_SPEED, Math.min(MAX_MOVE_SPEED, this.vx));
     } else if (this.vx !== 0) {
