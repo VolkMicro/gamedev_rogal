@@ -5,6 +5,9 @@ interface TelegramWebApp {
   setBackgroundColor?(color: string): void;
   /** Bot API 8.0+. Older Telegram clients don't have this — always optional-chained. */
   lockOrientation?(orientation: 'portrait' | 'landscape'): void;
+  /** Bot API 8.0+. In fullscreen the WebView can actually rotate, making lockOrientation effective. */
+  requestFullscreen?(): void;
+  isVersionAtLeast?(version: string): boolean;
   HapticFeedback?: {
     impactOccurred(style: 'light' | 'medium' | 'heavy' | 'rigid' | 'soft'): void;
   };
@@ -32,14 +35,21 @@ export function initTelegram(): void {
   webApp.expand();
   webApp.disableVerticalSwipes?.();
   webApp.setBackgroundColor?.('#050505');
-  // Best-effort — only Bot API 8.0+ clients support this. The #rotate-prompt
-  // overlay (index.html) is the real fallback for everyone else, since most
-  // webviews (notably iOS) won't force-rotate regardless of what we ask.
+  // Best-effort native landscape — only Bot API 8.0+ clients support these,
+  // and lockOrientation only takes effect in fullscreen. For everyone else
+  // (and whenever this fails) the real fix is src/orientation.ts's
+  // fake-landscape: the page rotates ITSELF, since Telegram's phone clients
+  // never rotate their own UI no matter what the player does.
   try {
-    webApp.lockOrientation?.('landscape');
+    // Version-gated (not just optional-chained): the telegram-web-app.js shim
+    // DEFINES these methods on every client but logs a console error when the
+    // underlying client is older than 8.0, so presence-checking isn't enough.
+    if (webApp.isVersionAtLeast?.('8.0')) {
+      webApp.requestFullscreen?.();
+      webApp.lockOrientation?.('landscape');
+    }
   } catch {
-    // Older client without this method despite the optional chain (some
-    // Telegram builds throw instead of returning undefined) — ignore.
+    // Some Telegram builds throw instead of no-op'ing — ignore either way.
   }
 }
 

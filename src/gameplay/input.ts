@@ -1,4 +1,5 @@
 import { TouchControls } from './touchControls';
+import { mapPointer, effectiveSize } from '../orientation';
 
 const STICK_RADIUS = 40;
 const AIM_DEADZONE = 8;
@@ -115,20 +116,24 @@ export class InputController {
   }
 
   private onPointerDown = (e: PointerEvent) => {
-    const isLeftHalf = e.clientX < window.innerWidth / 2;
+    // Game-space coords — under fake-landscape (see src/orientation.ts) the
+    // raw client coords are in the un-rotated screen frame and would swap
+    // the stick axes.
+    const p = mapPointer(e.clientX, e.clientY);
+    const isLeftHalf = p.x < effectiveSize().width / 2;
     if (isLeftHalf) {
       if (this.movePointerId !== null) return;
       this.movePointerId = e.pointerId;
-      this.moveOriginX = e.clientX;
-      this.moveOriginY = e.clientY;
+      this.moveOriginX = p.x;
+      this.moveOriginY = p.y;
       this.jumpArmed = true;
-      this.touchControls.moveActivate(e.clientX, e.clientY);
+      this.touchControls.moveActivate(p.x, p.y);
     } else {
       if (this.aimPointerId !== null) return;
       this.aimPointerId = e.pointerId;
-      this.aimOriginX = e.clientX;
-      this.aimOriginY = e.clientY;
-      this.touchControls.aimActivate(e.clientX, e.clientY);
+      this.aimOriginX = p.x;
+      this.aimOriginY = p.y;
+      this.touchControls.aimActivate(p.x, p.y);
     }
     // Guarantees this pointer's move/up events keep targeting `el` even if
     // it strays outside the element's bounds mid-drag — without this a fast
@@ -138,9 +143,10 @@ export class InputController {
   };
 
   private onPointerMove = (e: PointerEvent) => {
+    const p = mapPointer(e.clientX, e.clientY);
     if (e.pointerId === this.movePointerId) {
-      const dx = e.clientX - this.moveOriginX;
-      const dy = e.clientY - this.moveOriginY;
+      const dx = p.x - this.moveOriginX;
+      const dy = p.y - this.moveOriginY;
       const clamped = Math.max(-STICK_RADIUS, Math.min(STICK_RADIUS, dx));
       this.moveX = clamped / STICK_RADIUS;
 
@@ -155,8 +161,8 @@ export class InputController {
       this.touchControls.moveUpdate(this.moveX, visualY);
       e.preventDefault();
     } else if (e.pointerId === this.aimPointerId) {
-      const dx = e.clientX - this.aimOriginX;
-      const dy = e.clientY - this.aimOriginY;
+      const dx = p.x - this.aimOriginX;
+      const dy = p.y - this.aimOriginY;
       const dist = Math.hypot(dx, dy);
       if (dist >= AIM_DEADZONE) {
         this.aiming = true;

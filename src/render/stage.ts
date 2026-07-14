@@ -31,10 +31,15 @@ export class Stage {
     this.world = new Container();
   }
 
-  async init(canvasHost: HTMLElement): Promise<void> {
+  async init(canvasHost: HTMLElement, screenW: number, screenH: number): Promise<void> {
     await this.app.init({
       background: '#050505',
-      resizeTo: window,
+      // Manual sizing (not resizeTo: window): under fake-landscape (see
+      // src/orientation.ts) the game's effective width/height are the
+      // WINDOW'S SWAPPED dims, so the renderer must be sized by the caller
+      // through resize(), never directly from window.inner*.
+      width: screenW,
+      height: screenH,
       antialias: false,
       // Fixed at 1 regardless of devicePixelRatio: everything drawn on this
       // canvas is deliberately blocky nearest-neighbor pixel art (no text or
@@ -49,7 +54,12 @@ export class Stage {
     });
     canvasHost.appendChild(this.app.canvas);
     this.app.stage.addChild(this.world);
-    window.addEventListener('resize', () => this.updateCamera(this.lastCamX, this.lastCamY));
+  }
+
+  /** Resizes the renderer to new effective screen dims (fake-landscape/orientation changes) and re-fits the camera. */
+  resize(screenW: number, screenH: number): void {
+    this.app.renderer.resize(screenW, screenH);
+    this.updateCamera(this.lastCamX, this.lastCamY);
   }
 
   /** Queues a brief camera shake — magnitude in world-px, duration in seconds. Repeated calls take the stronger/longer of the two rather than stacking, so overlapping hits don't fling the camera off wildly. */

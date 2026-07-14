@@ -1,5 +1,6 @@
 import { Graphics } from 'pixi.js';
 import { initTelegram } from './telegram';
+import { setupFakeLandscape, effectiveSize } from './orientation';
 import { Stage } from './render/stage';
 import { SimRenderer } from './render/simRenderer';
 import { FxLayer } from './render/fx';
@@ -42,8 +43,7 @@ const SIM_DT_MS = 1000 / SIM_HZ;
 const ZOOM_TARGET_PX = 170;
 
 function computeViewportSize(): { width: number; height: number } {
-  const screenW = window.innerWidth;
-  const screenH = window.innerHeight;
+  const { width: screenW, height: screenH } = effectiveSize();
   const scale = Math.min(screenW, screenH) / ZOOM_TARGET_PX;
   return { width: Math.round(screenW / scale), height: Math.round(screenH / scale) };
 }
@@ -66,9 +66,20 @@ async function main(): Promise<void> {
   const appEl = document.querySelector<HTMLDivElement>('#app')!;
   appEl.innerHTML = '';
 
+  // Install fake-landscape BEFORE sizing anything — the effective dims it
+  // establishes are what the viewport and renderer are computed from. The
+  // stage doesn't exist during the initial synchronous apply, hence the
+  // nullable capture.
+  let stageForResize: Stage | null = null;
+  setupFakeLandscape(() => {
+    const size = effectiveSize();
+    stageForResize?.resize(size.width, size.height);
+  });
   const { width: VIEWPORT_WIDTH, height: VIEWPORT_HEIGHT } = computeViewportSize();
   const stage = new Stage(VIEWPORT_WIDTH, VIEWPORT_HEIGHT);
-  await stage.init(appEl);
+  const initialSize = effectiveSize();
+  await stage.init(appEl, initialSize.width, initialSize.height);
+  stageForResize = stage;
   await loadSprites();
 
   const simRenderer = new SimRenderer(VIEWPORT_WIDTH, VIEWPORT_HEIGHT);

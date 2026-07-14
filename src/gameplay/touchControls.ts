@@ -1,3 +1,5 @@
+import { effectiveSize } from '../orientation';
+
 export const STICK_BASE_RADIUS = 42;
 const BASE_RADIUS = STICK_BASE_RADIUS;
 const KNOB_RADIUS = 17;
@@ -94,9 +96,11 @@ export class TouchControls {
   }
 
   private resetIdlePositions(): void {
-    const h = window.innerHeight;
+    // Effective (game-space) dims — the sticks live inside the rotated body
+    // under fake-landscape, so raw window dims would park them off-screen.
+    const { width: w, height: h } = effectiveSize();
     this.moveIdle = { x: MARGIN + BASE_RADIUS, y: h - MARGIN - BASE_RADIUS };
-    this.aimIdle = { x: window.innerWidth - MARGIN - BASE_RADIUS, y: h - MARGIN - BASE_RADIUS };
+    this.aimIdle = { x: w - MARGIN - BASE_RADIUS, y: h - MARGIN - BASE_RADIUS };
     if (this.moveCenter.x === 0 && this.moveCenter.y === 0) this.moveCenter = { ...this.moveIdle };
     if (this.aimCenter.x === 0 && this.aimCenter.y === 0) this.aimCenter = { ...this.aimIdle };
   }
