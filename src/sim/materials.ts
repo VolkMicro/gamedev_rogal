@@ -5,6 +5,9 @@ export const Material = {
   Sand: 3,
   Water: 4,
   Fire: 5,
+  Lava: 6,
+  Acid: 7,
+  Ice: 8,
 } as const;
 export type Material = (typeof Material)[keyof typeof Material];
 
@@ -87,6 +90,33 @@ export const MATERIALS: Record<Material, MaterialDef> = {
     burnTime: 45,
     solidForPlayer: false,
   },
+  [Material.Lava]: {
+    id: Material.Lava,
+    name: 'lava',
+    state: MaterialState.Liquid,
+    color: [224, 78, 24],
+    density: 4,
+    flammable: false,
+    solidForPlayer: false,
+  },
+  [Material.Acid]: {
+    id: Material.Acid,
+    name: 'acid',
+    state: MaterialState.Liquid,
+    color: [163, 214, 64],
+    density: 2,
+    flammable: false,
+    solidForPlayer: false,
+  },
+  [Material.Ice]: {
+    id: Material.Ice,
+    name: 'ice',
+    state: MaterialState.Static,
+    color: [176, 217, 232],
+    density: 95,
+    flammable: false,
+    solidForPlayer: true,
+  },
 };
 
 /** Flat RGBA lookup table indexed by material id * 4, for fast pixel writes. */
@@ -103,3 +133,8 @@ for (const key of Object.keys(MATERIALS)) {
 export function isSolidForPlayer(mat: Material): boolean {
   return MATERIALS[mat].solidForPlayer;
 }
+
+/** Default `aux` (life/potency) to pass to world.set() when creating fresh Acid — see World's acid-corrosion pass. */
+export const ACID_DEFAULT_LIFE = 40;
+/** Default `aux` (decay countdown) to pass to world.set() when freezing Water into Ice — see World's ice-decay pass. */
+export const ICE_DEFAULT_LIFE = 300;

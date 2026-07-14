@@ -1,6 +1,7 @@
-import { isModifierSpell, type ModifierSpellId, type ProjectileSpellId, type SpellId } from './projectile';
+import { isModifierSpell, spellCastTimeMultiplier, type ModifierSpellId, type ProjectileSpellId, type SpellId } from './projectile';
 
-const CAST_COOLDOWN = 0.35;
+const BASE_CAST_COOLDOWN = 0.35;
+const CAST_SPEED_MULTIPLIER = 0.7; // -30% cooldown per GDD's "Ускорение каста"
 
 export interface CastResult {
   spell: ProjectileSpellId;
@@ -9,10 +10,10 @@ export interface CastResult {
 
 /**
  * Noita-style wand: slots execute left-to-right, wrapping. Modifier spells
- * (triple/homing) don't fire on their own — they attach to the next
- * projectile spell found in the sequence. Full crafting UI (drag slots
- * around) is a later stage; for now the loadout is fixed at cast-time via
- * the camp hub (see meta/save.ts wandLoadout).
+ * don't fire on their own — they attach to the next projectile spell found
+ * in the sequence. Full crafting UI (drag slots around) is a later stage;
+ * for now the loadout is fixed at cast-time via the camp hub (see
+ * meta/save.ts wandLoadout).
  */
 export class Wand {
   private slots: SpellId[];
@@ -44,7 +45,9 @@ export class Wand {
         continue;
       }
       this.nextSlot = (idx + 1) % this.slots.length;
-      this.cooldown = CAST_COOLDOWN;
+      let cooldown = BASE_CAST_COOLDOWN * spellCastTimeMultiplier(spell);
+      if (modifiers.includes('castSpeed')) cooldown *= CAST_SPEED_MULTIPLIER;
+      this.cooldown = cooldown;
       return { spell, modifiers };
     }
     // Wand is all modifiers with nothing to attach to — nothing happens.

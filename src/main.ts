@@ -6,8 +6,9 @@ import { World } from './sim/world';
 import { generateMinesLevel } from './sim/generation';
 import { Material } from './sim/materials';
 import { Player } from './gameplay/player';
-import { Enemy } from './gameplay/enemy';
-import { Projectile } from './gameplay/projectile';
+import { Enemy, type AnyEnemyKind } from './gameplay/enemy';
+import { Projectile, type CastOptions } from './gameplay/projectile';
+import { Ally } from './gameplay/ally';
 import { Wand } from './gameplay/wand';
 import { InputController } from './gameplay/input';
 import { StatsOverlay } from './perf/statsOverlay';
@@ -15,6 +16,8 @@ import { Hud } from './gameplay/hud';
 import { loadSave, persistSave } from './meta/save';
 import { Camp } from './meta/camp';
 import { loadSprites } from './render/sprites';
+
+const ESSENCE_STEAL_AMOUNT = 3;
 
 const WORLD_WIDTH = 400;
 const WORLD_HEIGHT = 720;
@@ -75,6 +78,7 @@ async function main(): Promise<void> {
   let boss: Enemy | null = null;
   let pickups: EssencePickup[] = [];
   let projectiles: Projectile[] = [];
+  let allies: Ally[] = [];
   let runEssence = 0;
   let runSeed = 1;
   let running = false;
@@ -92,10 +96,12 @@ async function main(): Promise<void> {
     if (boss) stage.world.removeChild(boss.sprite);
     for (const p of pickups) stage.world.removeChild(p.sprite);
     for (const p of projectiles) stage.world.removeChild(p.sprite);
+    for (const a of allies) stage.world.removeChild(a.sprite);
     enemies = [];
     boss = null;
     pickups = [];
     projectiles = [];
+    allies = [];
   }
 
   function startRun(seed: number): void {
@@ -149,6 +155,10 @@ async function main(): Promise<void> {
     isOpen(dx: number, dy: number): boolean;
     /** Raw material id at ABSOLUTE world coordinates (not relative to player) — for debugging the generator directly. */
     getCell(x: number, y: number): number;
+    /** Test-only: spawns an enemy of any kind next to the player without waiting on the depth-based RNG spawn table. */
+    spawnEnemy(kind: string, offsetX: number, offsetY: number): void;
+    /** Test-only: force-unlocks and equips an exact wand loadout, bypassing the camp UI/essence economy. */
+    equipWand(spellIds: string[]): void;
     input: InputController;
   }
   (window as unknown as { __wickDebug: WickDebug }).__wickDebug = {
@@ -167,6 +177,14 @@ async function main(): Promise<void> {
     },
     isOpen: (dx: number, dy: number) => !world.isSolidForPlayer(Math.floor(player.x + dx), Math.floor(player.y + dy)),
     getCell: (x: number, y: number) => world.get(x, y),
+    spawnEnemy: (kind, offsetX, offsetY) => {
+      const enemy = new Enemy(player.x + offsetX, player.y + offsetY, kind as AnyEnemyKind);
+      enemies.push(enemy);
+      stage.world.addChild(enemy.sprite);
+    },
+    equipWand: (spellIds) => {
+      wand.setSlots(spellIds as unknown as Parameters<Wand['setSlots']>[0]);
+    },
     input,
   };
 
@@ -183,14 +201,30 @@ async function main(): Promise<void> {
     if (input.aiming && !player.dead) {
       const cast = wand.tryCast();
       if (cast) {
-        const homing = cast.modifiers.includes('homing');
+        const mods = cast.modifiers;
+        const opts: CastOptions = {
+          homing: mods.includes('homing'),
+          ignite: mods.includes('ignite'),
+          ricochet: mods.includes('ricochet'),
+          piercing: mods.includes('piercing'),
+          split: mods.includes('split'),
+          gravityTrail: mods.includes('gravityTrail'),
+          enlarge: mods.includes('enlarge'),
+        };
+        if (cast.spell === 'bloodSpear') opts.damageOverride = Math.max(1, Math.round(player.hp * 0.35));
+
         const angle = Math.atan2(input.aimY, input.aimX);
-        const spreadAngles = cast.modifiers.includes('triple') ? [-0.28, 0, 0.28] : [0];
+        const spreadAngles = mods.includes('triple') ? [-0.28, 0, 0.28] : [0];
         for (const spread of spreadAngles) {
           const a = angle + spread;
-          const proj = new Projectile(player.x, player.y, Math.cos(a), Math.sin(a), cast.spell, homing);
+          const proj = new Projectile(player.x, player.y, Math.cos(a), Math.sin(a), cast.spell, opts);
           projectiles.push(proj);
           stage.world.addChild(proj.sprite);
+        }
+        if (mods.includes('summon')) {
+          const ally = new Ally(player.x, player.y);
+          allies.push(ally);
+          stage.world.addChild(ally.sprite);
         }
       }
     }
@@ -212,6 +246,26 @@ async function main(): Promise<void> {
           }
         }
       }
+      if (enemy.pendingAttack) {
+        const { dx, dy } = enemy.pendingAttack;
+        enemy.pendingAttack = null;
+        const spell = enemy.kind === 'fireImp' ? 'fireball' : 'spark';
+        const proj = new Projectile(enemy.x, enemy.y, dx, dy, spell, { hostile: true });
+        projectiles.push(proj);
+        stage.world.addChild(proj.sprite);
+      }
+      if (enemy.essenceStolen) {
+        enemy.essenceStolen = false;
+        runEssence = Math.max(0, runEssence - ESSENCE_STEAL_AMOUNT);
+      }
+    }
+
+    for (const ally of allies) ally.update(dtSec, allEnemies);
+    if (allies.some((a) => a.dead)) {
+      allies = allies.filter((a) => {
+        if (a.dead) stage.world.removeChild(a.sprite);
+        return !a.dead;
+      });
     }
     if (enemies.some((e) => e.dead)) {
       enemies = enemies.filter((e) => {
@@ -220,7 +274,19 @@ async function main(): Promise<void> {
       });
     }
 
-    for (const proj of projectiles) proj.update(dtSec, world, allEnemies);
+    for (const proj of projectiles) proj.update(dtSec, world, allEnemies, player);
+    const projectileCountBeforeSplits = projectiles.length;
+    for (let i = 0; i < projectileCountBeforeSplits; i++) {
+      const proj = projectiles[i];
+      if (proj.splitSpawns) {
+        for (const spawn of proj.splitSpawns) {
+          const child = new Projectile(spawn.x, spawn.y, spawn.dirX, spawn.dirY, 'spark', {});
+          projectiles.push(child);
+          stage.world.addChild(child.sprite);
+        }
+        proj.splitSpawns = null;
+      }
+    }
     if (projectiles.some((p) => p.dead)) {
       projectiles = projectiles.filter((p) => {
         if (p.dead) stage.world.removeChild(p.sprite);
@@ -249,6 +315,7 @@ async function main(): Promise<void> {
     if (boss) boss.sprite.visible = stage.isInView(boss.x, boss.y);
     for (const pickup of pickups) pickup.sprite.visible = stage.isInView(pickup.x, pickup.y);
     for (const proj of projectiles) proj.sprite.visible = stage.isInView(proj.x, proj.y);
+    for (const ally of allies) ally.sprite.visible = stage.isInView(ally.x, ally.y);
     const viewOrigin = stage.getViewOriginWorld();
     simRenderer.render(world, viewOrigin.x, viewOrigin.y);
     hud.update(player.hp, player.maxHp, runEssence);

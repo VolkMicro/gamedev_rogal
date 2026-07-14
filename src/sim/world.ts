@@ -161,10 +161,90 @@ export class World {
 
   private updateCell(x: number, y: number): void {
     const mat = this.material[this.idx(x, y)] as Material;
+    if (mat === Material.Ice) {
+      this.updateIce(x, y);
+      return;
+    }
     const state = MATERIALS[mat].state;
     if (state === MaterialState.Powder) this.updatePowder(x, y, mat);
-    else if (state === MaterialState.Liquid) this.updateLiquid(x, y, mat);
-    else if (state === MaterialState.Fire) this.updateFire(x, y);
+    else if (state === MaterialState.Liquid) {
+      // Run neighbor-affecting effects BEFORE movement — updateLiquid can
+      // swap this cell's contents elsewhere, so touching (x,y) afterward
+      // could act on whatever material got swapped in, not the Lava/Acid
+      // that was actually here this tick.
+      if (mat === Material.Lava) this.updateLavaEffects(x, y);
+      else if (mat === Material.Acid) this.updateAcidEffects(x, y);
+      this.updateLiquid(x, y, mat);
+    } else if (state === MaterialState.Fire) this.updateFire(x, y);
+  }
+
+  private igniteFlammableNeighbor(nx: number, ny: number, chancePercent: number): void {
+    if (!this.inBounds(nx, ny)) return;
+    const nMat = this.material[this.idx(nx, ny)] as Material;
+    const def = MATERIALS[nMat];
+    if (def.flammable && hash2(nx, ny, this.tick) % 100 < chancePercent) {
+      this.set(nx, ny, Material.Fire, def.burnTime ?? 45);
+    }
+  }
+
+  /** Lava ignites nearby flammables like Fire does, and extinguishes into Stone on contact with Water (steam). */
+  private updateLavaEffects(x: number, y: number): void {
+    const neighbors: Array<[number, number]> = [
+      [x + 1, y],
+      [x - 1, y],
+      [x, y + 1],
+      [x, y - 1],
+    ];
+    for (const [nx, ny] of neighbors) {
+      if (!this.inBounds(nx, ny)) continue;
+      if ((this.material[this.idx(nx, ny)] as Material) === Material.Water) {
+        this.set(nx, ny, Material.Stone);
+        this.set(x, y, Material.Stone);
+        return;
+      }
+    }
+    for (const [nx, ny] of neighbors) this.igniteFlammableNeighbor(nx, ny, 8);
+  }
+
+  /** Acid dissolves one adjacent solid cell per tick, consuming its own potency (aux) until spent. */
+  private updateAcidEffects(x: number, y: number): void {
+    const i = this.idx(x, y);
+    const neighbors: Array<[number, number]> = [
+      [x + 1, y],
+      [x - 1, y],
+      [x, y + 1],
+      [x, y - 1],
+    ];
+    for (const [nx, ny] of neighbors) {
+      if (!this.inBounds(nx, ny)) continue;
+      const nMat = this.material[this.idx(nx, ny)] as Material;
+      if (
+        (nMat === Material.Stone || nMat === Material.Wood || nMat === Material.Sand) &&
+        hash2(nx, ny, this.tick) % 100 < 10
+      ) {
+        this.set(nx, ny, Material.Empty);
+        const life = this.aux[i] - 1;
+        if (life <= 0) {
+          this.set(x, y, Material.Empty);
+        } else {
+          this.aux[i] = life;
+          this.wake(x, y);
+        }
+        return;
+      }
+    }
+  }
+
+  /** Ice is a temporary platform (Ice Shard spell freezing Water) that melts back to Water once its aux countdown runs out. */
+  private updateIce(x: number, y: number): void {
+    const i = this.idx(x, y);
+    const life = this.aux[i] - 1;
+    if (life <= 0) {
+      this.set(x, y, Material.Water);
+      return;
+    }
+    this.aux[i] = life;
+    this.wake(x, y);
   }
 
   private canPowderEnter(mat: Material, target: Material): boolean {
@@ -225,20 +305,10 @@ export class World {
     }
     this.aux[i] = life;
 
-    const neighbors = [
-      [x + 1, y],
-      [x - 1, y],
-      [x, y + 1],
-      [x, y - 1],
-    ];
-    for (const [nx, ny] of neighbors) {
-      if (!this.inBounds(nx, ny)) continue;
-      const nMat = this.material[this.idx(nx, ny)] as Material;
-      const def = MATERIALS[nMat];
-      if (def.flammable && hash2(nx, ny, this.tick) % 100 < 6) {
-        this.set(nx, ny, Material.Fire, def.burnTime ?? 45);
-      }
-    }
+    this.igniteFlammableNeighbor(x + 1, y, 6);
+    this.igniteFlammableNeighbor(x - 1, y, 6);
+    this.igniteFlammableNeighbor(x, y + 1, 6);
+    this.igniteFlammableNeighbor(x, y - 1, 6);
 
     if (this.isEmpty(x, y - 1) && hash2(x, y, this.tick + 1) % 100 < 40) {
       this.swap(x, y, x, y - 1);

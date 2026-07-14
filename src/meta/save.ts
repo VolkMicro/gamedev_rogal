@@ -45,7 +45,34 @@ export function persistSave(save: SaveState): void {
   }
 }
 
-export const ALL_SPELLS: SpellId[] = ['spark', 'saw', 'bomb', 'triple', 'homing'];
+/** Full 25-spell roster from GDD §4 — 15 projectiles then 10 modifiers, in the order they're offered for unlock. */
+export const ALL_SPELLS: SpellId[] = [
+  'spark',
+  'saw',
+  'bomb',
+  'lightning',
+  'acidBall',
+  'fireball',
+  'iceShard',
+  'chainLightning',
+  'blackHole',
+  'digger',
+  'sporeCloud',
+  'poisonDart',
+  'holyLight',
+  'bloodSpear',
+  'annihilationBomb',
+  'triple',
+  'homing',
+  'ignite',
+  'ricochet',
+  'castSpeed',
+  'enlarge',
+  'piercing',
+  'split',
+  'gravityTrail',
+  'summon',
+];
 export const MAX_WAND_SLOTS = WAND_SLOTS;
 
 interface SpellUnlockCost {
@@ -53,10 +80,17 @@ interface SpellUnlockCost {
   cost: number;
 }
 
-/** Spells not yet unlocked, in the fixed offer order, with their essence cost (50 * 1.35^n per GDD §2). */
+/**
+ * Spells not yet unlocked, in the fixed offer order, with their essence
+ * cost. GDD §2 specifies 50*1.35^n for a 5-item pool (full completion in
+ * ~15-20 runs); with the full 25-item roster that exponent would make the
+ * last few unlocks absurd (1.35^24 ≈ 1400x), so the growth rate is gentler
+ * here (1.15^n) to land full completion in the same "many runs, not
+ * hundreds" ballpark the GDD intended.
+ */
 export function nextSpellUnlocks(save: SaveState): SpellUnlockCost[] {
   const locked = ALL_SPELLS.filter((s) => !save.unlockedSpells.includes(s));
-  return locked.map((spell, i) => ({ spell, cost: Math.round(50 * Math.pow(1.35, save.unlockedSpells.length - 1 + i)) }));
+  return locked.map((spell, i) => ({ spell, cost: Math.round(50 * Math.pow(1.15, save.unlockedSpells.length - 1 + i)) }));
 }
 
 export function nextWandSlotCost(save: SaveState): number | null {

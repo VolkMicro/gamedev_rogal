@@ -1,7 +1,6 @@
 import { Material } from './materials';
 import type { World } from './world';
-
-export type EnemyKind = 'mole' | 'beetle' | 'collapser';
+import type { EnemyKind } from '../gameplay/enemy';
 
 export interface GeneratedLevel {
   spawnX: number;
@@ -21,8 +20,29 @@ function mulberry32(seed: number): () => number {
   };
 }
 
-const ENEMY_KINDS: EnemyKind[] = ['mole', 'beetle', 'collapser'];
 const SAFE_ZONE_DEPTH = 130;
+
+/**
+ * Soft difficulty curve by depth: only one biome/terrain-set exists so far
+ * (the GDD's other three biomes are a separate, later content pass), but the
+ * enemy roster is complete — so variety and danger still ramp up the deeper
+ * you go, just within the same Mines shaft rather than distinct biomes.
+ * essenceKeeper is a mini-boss per the GDD and stays rare even at max depth.
+ */
+const DEPTH_BANDS: Array<{ minDepth: number; kinds: EnemyKind[] }> = [
+  { minDepth: SAFE_ZONE_DEPTH, kinds: ['mole', 'beetle', 'collapser'] },
+  { minDepth: 280, kinds: ['mole', 'beetle', 'collapser', 'sulfurTick', 'acidSlime'] },
+  { minDepth: 430, kinds: ['acidSlime', 'leech', 'drowned', 'fireImp', 'heatedGuardian', 'sulfurTick'] },
+  { minDepth: 560, kinds: ['drowned', 'fireImp', 'heatedGuardian', 'whisperOfDarkness', 'ashHound', 'ashHound', 'essenceKeeper'] },
+];
+
+function pickEnemyKind(rand: () => number, depth: number): EnemyKind {
+  let pool = DEPTH_BANDS[0].kinds;
+  for (const band of DEPTH_BANDS) {
+    if (depth >= band.minDepth) pool = band.kinds;
+  }
+  return pool[Math.floor(rand() * pool.length)];
+}
 
 const CORRIDOR_W_MIN = 14;
 const CORRIDOR_W_MAX = 22;
@@ -144,9 +164,14 @@ export function generateMinesLevel(world: World, seed: number): GeneratedLevel {
     // No enemies in the first stretch below spawn — gives the player a
     // moment to get their bearings before the first real threat instead of
     // risking an ambush a few seconds into the run.
-    if (rand() < 0.55 && cursorY - spawnY > SAFE_ZONE_DEPTH) {
-      const kind = ENEMY_KINDS[Math.floor(rand() * ENEMY_KINDS.length)];
+    const depth = cursorY - spawnY;
+    if (rand() < 0.55 && depth > SAFE_ZONE_DEPTH) {
+      const kind = pickEnemyKind(rand, depth);
       enemySpawns.push({ x: rand() < 0.5 ? leftSpotX : rightSpotX, y: floorY, kind });
+      // Ash hounds hunt in packs per the GDD — a second one spawns nearby.
+      if (kind === 'ashHound' && rand() < 0.7) {
+        enemySpawns.push({ x: rand() < 0.5 ? leftSpotX + 10 : rightSpotX + 10, y: floorY, kind });
+      }
     }
     if (rand() < 0.6) essenceSpawns.push({ x: rand() < 0.5 ? rightSpotX : leftSpotX, y: floorY });
 
