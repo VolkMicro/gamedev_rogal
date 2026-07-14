@@ -38,6 +38,7 @@ export class Player {
   private legsApart = false;
   private facing = 1;
   private knockbackTimer = 0;
+  private squashTimer = 0;
   /** Set for exactly one frame whenever damage actually lands (not absorbed by invuln). main.ts reads and clears it to drive hit-feedback (shake/flash). */
   justHit = false;
   readonly sprite: Sprite;
@@ -109,10 +110,14 @@ export class Player {
       this.vy = JUMP_VELOCITY;
     }
 
+    const fallSpeedBefore = this.vy;
     this.moveAxis(dt * this.vx, 0, world);
     const landed = this.moveAxis(0, dt * this.vy, world);
+    const wasAirborne = !this.grounded;
     this.grounded = landed && this.vy >= 0;
     if (this.grounded) this.vy = 0;
+    // Landing squash — only from a real fall, not every grounded frame.
+    if (this.grounded && wasAirborne && fallSpeedBefore > 100) this.squashTimer = 0.14;
 
     if (Math.abs(this.vx) > 2) {
       this.walkTimer += dt;
@@ -126,7 +131,12 @@ export class Player {
       this.legsApart = false;
       this.sprite.texture = playerTexture(false);
     }
-    this.sprite.scale.x = this.facing;
+    // Squash-and-stretch on landing: wide+short easing back to normal. Pure
+    // scale trickery on the existing sprite — no extra art needed for the
+    // character to stop feeling like a sliding cardboard cutout.
+    if (this.squashTimer > 0) this.squashTimer = Math.max(0, this.squashTimer - dt);
+    const squash = this.squashTimer / 0.14;
+    this.sprite.scale.set(this.facing * (1 + squash * 0.25), 1 - squash * 0.25);
     this.sprite.x = this.x;
     this.sprite.y = this.y;
 

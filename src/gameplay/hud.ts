@@ -85,6 +85,36 @@ export class Hud {
     document.body.appendChild(this.damageFlash);
   }
 
+  showNote(text: string): void {
+    const note = document.createElement('div');
+    Object.assign(note.style, {
+      position: 'fixed',
+      top: '15%',
+      left: '50%',
+      transform: 'translateX(-50%)',
+      maxWidth: 'min(420px, 80vw)',
+      padding: '12px 16px',
+      background: 'rgba(24, 20, 14, 0.94)',
+      border: '1px solid #6e5a34',
+      color: '#e8dcc0',
+      font: '13px monospace',
+      lineHeight: '1.5',
+      zIndex: '25',
+      opacity: '0',
+      transition: 'opacity 400ms ease',
+      pointerEvents: 'none',
+    } satisfies Partial<CSSStyleDeclaration>);
+    note.textContent = text;
+    document.body.appendChild(note);
+    requestAnimationFrame(() => {
+      note.style.opacity = '1';
+    });
+    setTimeout(() => {
+      note.style.opacity = '0';
+      setTimeout(() => note.remove(), 500);
+    }, 6000);
+  }
+
   flashDamage(): void {
     this.damageFlash.style.transition = 'none';
     this.damageFlash.style.opacity = '0.32';

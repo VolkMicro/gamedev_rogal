@@ -12,6 +12,8 @@ export interface SaveState {
   wandLoadout: SpellId[];
   runsCompleted: number;
   deaths: number;
+  /** How many lore fragments have been read — notes found in the world reveal LORE_FRAGMENTS in order, so the story drips across runs. */
+  loreSeen: number;
 }
 
 function defaultSave(): SaveState {
@@ -23,6 +25,7 @@ function defaultSave(): SaveState {
     wandLoadout: ['spark', 'spark'],
     runsCompleted: 0,
     deaths: 0,
+    loreSeen: 0,
   };
 }
 

@@ -81,6 +81,7 @@ export class Enemy {
   private slamTargetY = 0;
   private animFrame: 0 | 1 = 0;
   private animTimer = Math.random() * ANIM_INTERVAL;
+  private hitFlashTimer = 0;
 
   private poisonTicksLeft = 0;
   private poisonDamagePerTick = 0;
@@ -111,7 +112,10 @@ export class Enemy {
   takeDamage(amount: number, silent = false): void {
     if (this.dead) return;
     this.hp -= amount;
-    if (!silent) this.justHit = true;
+    if (!silent) {
+      this.justHit = true;
+      this.hitFlashTimer = 0.12;
+    }
     if (this.hp <= 0) {
       this.dead = true;
       this.justDied = true;
@@ -147,10 +151,10 @@ export class Enemy {
       if (this.kind === 'mole') this.updateMole(dt, world, dxToPlayer, dyToPlayer, distToPlayer);
       else if (this.kind === 'beetle') this.updateBeetle(dt, world);
       else if (this.kind === 'collapser') this.updateCollapser(dt, world, player, dxToPlayer, distToPlayer);
-      else if (this.kind === 'leech') this.updateLeech(dt, dxToPlayer, dyToPlayer, distToPlayer);
+      else if (this.kind === 'leech') this.updateLeech(dt, world, dxToPlayer, dyToPlayer, distToPlayer);
       else if (this.kind === 'acidSlime') this.updateAcidSlime(dt, world);
       else if (this.kind === 'drowned') this.updateDrowned(dt, world, dxToPlayer, dyToPlayer, distToPlayer);
-      else if (this.kind === 'fireImp') this.updateFireImp(dt, dxToPlayer, dyToPlayer, distToPlayer);
+      else if (this.kind === 'fireImp') this.updateFireImp(dt, world, dxToPlayer, dyToPlayer, distToPlayer);
       else if (this.kind === 'sulfurTick') this.updateSulfurTick(dt, world, distToPlayer);
       else if (this.kind === 'heatedGuardian') this.updateHeatedGuardian(dt, world);
       else if (this.kind === 'whisperOfDarkness') this.updateWhisper(dt, world, player, dxToPlayer, dyToPlayer, distToPlayer);
@@ -165,17 +169,25 @@ export class Enemy {
       this.animFrame = this.animFrame === 0 ? 1 : 0;
       this.sprite.texture = enemyTexture(this.kind, this.animFrame);
     }
-    this.sprite.scale.x = this.facing;
+    // Hit reaction: brief bright flash + scale pop that eases back to normal —
+    // the per-sprite half of the hit feedback (the global half is main.ts's
+    // hit-stop/shake/particles). Flash wins over status tints while active
+    // so the "you hit it" read is never masked by poison/burn coloring.
+    if (this.hitFlashTimer > 0) this.hitFlashTimer = Math.max(0, this.hitFlashTimer - dt);
+    const pop = 1 + (this.hitFlashTimer / 0.12) * 0.25;
+    this.sprite.scale.set(this.facing * pop, pop);
     this.sprite.x = this.x;
     this.sprite.y = this.y;
     this.sprite.tint =
-      this.slamTelegraphTimer > 0
-        ? 0xff3030
-        : this.poisonTicksLeft > 0
-          ? 0x9fe870
-          : this.burnTicksLeft > 0
-            ? 0xff9a5a
-            : 0xffffff;
+      this.hitFlashTimer > 0
+        ? 0xffb0b0
+        : this.slamTelegraphTimer > 0
+          ? 0xff3030
+          : this.poisonTicksLeft > 0
+            ? 0x9fe870
+            : this.burnTicksLeft > 0
+              ? 0xff9a5a
+              : 0xffffff;
 
     const contactRadius = this.kind === 'sulfurTick' ? this.hitRadius + 12 : this.hitRadius + 6;
     if (!player.dead && this.contactCooldown <= 0 && distToPlayer <= contactRadius) {
@@ -260,12 +272,25 @@ export class Enemy {
     }
   }
 
-  /** Free-swims straight at the player, ignoring gravity/terrain — a fast erratic pursuer once it's aggroed. */
-  private updateLeech(dt: number, dx: number, dy: number, dist: number): void {
+  /**
+   * Axis-separated flying movement with terrain collision — flyers ignore
+   * GRAVITY, not WALLS. Before this, leech/fireImp added their velocity to
+   * x/y unchecked and visibly clipped through solid rock, which reads as
+   * flatly broken ("мобы сквозь стену лезут"). Sliding along the blocked
+   * axis (instead of stopping dead) keeps them threatening around corners.
+   */
+  private flyMove(world: World, dt: number, dirX: number, dirY: number, speed: number): void {
+    const nx = this.x + dirX * speed * dt;
+    const ny = this.y + dirY * speed * dt;
+    if (!world.isSolidForPlayer(Math.floor(nx + Math.sign(dirX) * this.hitRadius), Math.floor(this.y))) this.x = nx;
+    if (!world.isSolidForPlayer(Math.floor(this.x), Math.floor(ny + Math.sign(dirY) * this.hitRadius))) this.y = ny;
+  }
+
+  /** Free-swims straight at the player, ignoring gravity (but not walls) — a fast erratic pursuer once it's aggroed. */
+  private updateLeech(dt: number, world: World, dx: number, dy: number, dist: number): void {
     if (dist < AGGRO_RANGE && dist > 1) {
       const stats = STATS.leech;
-      this.x += (dx / dist) * stats.speed * dt;
-      this.y += (dy / dist) * stats.speed * dt;
+      this.flyMove(world, dt, dx / dist, dy / dist, stats.speed);
       this.facing = dx >= 0 ? 1 : -1;
     }
   }
@@ -316,15 +341,13 @@ export class Enemy {
     void dy;
   }
 
-  /** Flies (ignores gravity), hovers near the player, periodically lobs a fireball. */
-  private updateFireImp(dt: number, dx: number, dy: number, dist: number): void {
+  /** Flies (ignores gravity, but not walls), hovers near the player, periodically lobs a fireball. */
+  private updateFireImp(dt: number, world: World, dx: number, dy: number, dist: number): void {
     const stats = STATS.fireImp;
     if (dist > 70) {
-      this.x += (dx / dist || 0) * stats.speed * dt;
-      this.y += (dy / dist || 0) * stats.speed * dt;
+      this.flyMove(world, dt, dx / dist || 0, dy / dist || 0, stats.speed);
     } else if (dist < 45 && dist > 0.1) {
-      this.x -= (dx / dist) * stats.speed * dt * 0.6;
-      this.y -= (dy / dist) * stats.speed * dt * 0.6;
+      this.flyMove(world, dt, -dx / dist, -dy / dist, stats.speed * 0.6);
     }
     this.facing = dx >= 0 ? 1 : -1;
     this.attackTimer -= dt;
@@ -383,7 +406,18 @@ export class Enemy {
       const r = 60 + Math.random() * 40;
       const tx = player.x + Math.cos(angle) * r;
       const ty = player.y + Math.sin(angle) * r;
-      if (!world.isSolidForPlayer(Math.floor(tx), Math.floor(ty))) {
+      // Check the enemy's whole hit-box footprint, not just its center cell —
+      // a single-point check let it blink half-inside a wall (visually
+      // "climbing through" it) whenever the center happened to be open but
+      // the body wasn't.
+      const rr = this.hitRadius;
+      const clear =
+        !world.isSolidForPlayer(Math.floor(tx - rr), Math.floor(ty - rr)) &&
+        !world.isSolidForPlayer(Math.floor(tx + rr), Math.floor(ty - rr)) &&
+        !world.isSolidForPlayer(Math.floor(tx - rr), Math.floor(ty + rr)) &&
+        !world.isSolidForPlayer(Math.floor(tx + rr), Math.floor(ty + rr)) &&
+        !world.isSolidForPlayer(Math.floor(tx), Math.floor(ty));
+      if (clear) {
         this.x = tx;
         this.y = ty;
       }

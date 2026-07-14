@@ -29,6 +29,15 @@ export class Wand {
     this.nextSlot = 0;
   }
 
+  /** Appends a run-time reward slot (in-run upgrade choices) — beyond the camp loadout's slot cap, lost when the wand is rebuilt at the next run's start. */
+  addRunSlot(spell: SpellId): void {
+    this.slots = [...this.slots, spell];
+  }
+
+  currentSlots(): SpellId[] {
+    return [...this.slots];
+  }
+
   tick(dt: number): void {
     if (this.cooldown > 0) this.cooldown -= dt;
   }

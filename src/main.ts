@@ -14,7 +14,10 @@ import { Wand } from './gameplay/wand';
 import { InputController } from './gameplay/input';
 import { StatsOverlay } from './perf/statsOverlay';
 import { Hud } from './gameplay/hud';
-import { loadSave, persistSave } from './meta/save';
+import { loadSave, persistSave, ALL_SPELLS } from './meta/save';
+import { LORE_FRAGMENTS } from './meta/lore';
+import { UpgradeChoice } from './gameplay/upgradeChoice';
+import type { SpellId } from './gameplay/projectile';
 import { Camp } from './meta/camp';
 import { loadSprites } from './render/sprites';
 
@@ -50,7 +53,12 @@ interface EssencePickup {
   y: number;
   sprite: Graphics;
   collected: boolean;
+  /** 'lore' pickups are guild-master notes — collecting one reveals the next LORE_FRAGMENTS entry instead of granting essence. */
+  kind: 'essence' | 'lore';
 }
+
+/** Essence totals at which the run pauses for a Vampire-Survivors-style pick-1-of-3 spell reward. Front-loaded so the first choice lands within the first minute of a run. */
+const UPGRADE_THRESHOLDS = [6, 16, 30, 48, 70];
 
 async function main(): Promise<void> {
   initTelegram();
@@ -87,6 +95,8 @@ async function main(): Promise<void> {
   let runSeed = 1;
   let running = false;
   let currentLevel: GeneratedLevel | null = null;
+  let upgradesTaken = 0;
+  const upgradeChoice = new UpgradeChoice();
 
   const camp = new Camp(save, () => {
     wand = new Wand(save.wandLoadout);
@@ -112,6 +122,8 @@ async function main(): Promise<void> {
   function startRun(seed: number): void {
     clearRunObjects();
     runEssence = 0;
+    upgradesTaken = 0;
+    upgradeChoice.hide();
 
     world = new World(WORLD_WIDTH, WORLD_HEIGHT);
     const level = generateMinesLevel(world, seed);
@@ -123,13 +135,19 @@ async function main(): Promise<void> {
       enemies.push(enemy);
       stage.world.addChild(enemy.sprite);
     }
-    for (const spawn of level.essenceSpawns) {
-      const sprite = new Graphics().circle(0, 0, 2).fill(0xffd15c);
+    level.essenceSpawns.forEach((spawn, i) => {
+      // Every 6th essence spot becomes a lore note instead (2-3 per run) —
+      // deterministic by index so the same seed always yields the same map.
+      const kind: EssencePickup['kind'] = i % 6 === 3 && save.loreSeen < LORE_FRAGMENTS.length ? 'lore' : 'essence';
+      const sprite =
+        kind === 'lore'
+          ? new Graphics().rect(-2.5, -3, 5, 6).fill(0xe8dcc0).rect(-1.5, -2, 3, 1).fill(0x6e5a34)
+          : new Graphics().circle(0, 0, 2).fill(0xffd15c);
       sprite.x = spawn.x;
       sprite.y = spawn.y;
-      pickups.push({ x: spawn.x, y: spawn.y, sprite, collected: false });
+      pickups.push({ x: spawn.x, y: spawn.y, sprite, collected: false, kind });
       stage.world.addChild(sprite);
-    }
+    });
     boss = new Enemy(level.bossSpawn.x, level.bossSpawn.y, 'boss');
     stage.world.addChild(boss.sprite);
   }
@@ -167,6 +185,8 @@ async function main(): Promise<void> {
     spawnEnemy(kind: string, offsetX: number, offsetY: number): void;
     /** Test-only: force-unlocks and equips an exact wand loadout, bypassing the camp UI/essence economy. */
     equipWand(spellIds: string[]): void;
+    /** Test-only: grants run essence directly, to exercise the upgrade-threshold flow without hunting pickups. */
+    addEssence(amount: number): void;
     input: InputController;
   }
   (window as unknown as { __wickDebug: WickDebug }).__wickDebug = {
@@ -195,6 +215,9 @@ async function main(): Promise<void> {
     equipWand: (spellIds) => {
       wand.setSlots(spellIds as unknown as Parameters<Wand['setSlots']>[0]);
     },
+    addEssence: (amount) => {
+      runEssence += amount;
+    },
     input,
   };
 
@@ -205,6 +228,9 @@ async function main(): Promise<void> {
     const dtMs = ticker.deltaMS;
     const realDtSec = dtMs / 1000;
     if (!running) return;
+    // Hard pause while the upgrade-pick overlay is up — the world behind it
+    // stays as a frozen backdrop (no render updates needed; nothing moves).
+    if (upgradeChoice.visible) return;
 
     // Hit-stop: freeze all gameplay simulation for a brief real-time beat on
     // an impactful hit/kill while still rendering (and still animating FX
@@ -326,11 +352,40 @@ async function main(): Promise<void> {
       if (pickup.collected) continue;
       if (Math.hypot(pickup.x - player.x, pickup.y - player.y) < 10) {
         pickup.collected = true;
-        runEssence += 1;
+        if (pickup.kind === 'lore') {
+          const fragment = LORE_FRAGMENTS[Math.min(save.loreSeen, LORE_FRAGMENTS.length - 1)];
+          save.loreSeen = Math.min(save.loreSeen + 1, LORE_FRAGMENTS.length);
+          persistSave(save);
+          hud.showNote(fragment);
+        } else {
+          runEssence += 1;
+        }
         stage.world.removeChild(pickup.sprite);
       }
     }
     if (pickups.some((p) => p.collected)) pickups = pickups.filter((p) => !p.collected);
+
+    // In-run upgrade pick: crossing an essence threshold pauses the run and
+    // offers 3 random spells; the pick is appended to the wand for this run
+    // only. The "every few seconds something good happens" cadence — the
+    // single most load-bearing retention pattern in the genre-neighbor
+    // analysis (Vampire Survivors' level-up loop) — and it makes each run's
+    // build diverge from the camp loadout, so runs stop feeling identical.
+    if (upgradesTaken < UPGRADE_THRESHOLDS.length && runEssence >= UPGRADE_THRESHOLDS[upgradesTaken] && !upgradeChoice.visible && !player.dead) {
+      upgradesTaken++;
+      const current = new Set(wand.currentSlots());
+      const pool = ALL_SPELLS.filter((s) => !current.has(s));
+      const options: SpellId[] = [];
+      while (options.length < 3 && pool.length > 0) {
+        const idx = Math.floor(Math.random() * pool.length);
+        options.push(pool.splice(idx, 1)[0]);
+      }
+      if (options.length > 0) {
+        upgradeChoice.show(options, (spell) => {
+          wand.addRunSlot(spell);
+        });
+      }
+    }
 
     if (player.justHit) {
       player.justHit = false;
