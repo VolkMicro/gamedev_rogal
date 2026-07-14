@@ -38,6 +38,8 @@ export class Player {
   private legsApart = false;
   private facing = 1;
   private knockbackTimer = 0;
+  /** Set for exactly one frame whenever damage actually lands (not absorbed by invuln). main.ts reads and clears it to drive hit-feedback (shake/flash). */
+  justHit = false;
   readonly sprite: Sprite;
 
   constructor(spawnX: number, spawnY: number) {
@@ -72,6 +74,7 @@ export class Player {
     if (this.invulnTimer > 0 || this.dead) return;
     this.hp = Math.max(0, this.hp - amount);
     this.invulnTimer = INVULN_AFTER_HIT;
+    this.justHit = true;
     if (this.hp <= 0) this.dead = true;
   }
 

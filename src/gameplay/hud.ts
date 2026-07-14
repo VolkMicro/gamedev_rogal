@@ -4,6 +4,7 @@ export class Hud {
   private essenceEl: HTMLDivElement;
   private bossContainer: HTMLDivElement;
   private bossFill: HTMLDivElement;
+  private damageFlash: HTMLDivElement;
 
   constructor() {
     const container = document.createElement('div');
@@ -67,6 +68,30 @@ export class Hud {
     bossTrack.appendChild(this.bossFill);
     this.bossContainer.appendChild(bossTrack);
     document.body.appendChild(this.bossContainer);
+
+    // Full-screen damage flash — plain DOM overlay (not Pixi) since it must
+    // cover the exact screen regardless of camera zoom/shake/letterbox, and
+    // everything else UI-facing in this game is already DOM, not canvas.
+    this.damageFlash = document.createElement('div');
+    Object.assign(this.damageFlash.style, {
+      position: 'fixed',
+      inset: '0',
+      background: '#c92020',
+      opacity: '0',
+      pointerEvents: 'none',
+      zIndex: '9',
+      transition: 'opacity 220ms ease-out',
+    } satisfies Partial<CSSStyleDeclaration>);
+    document.body.appendChild(this.damageFlash);
+  }
+
+  flashDamage(): void {
+    this.damageFlash.style.transition = 'none';
+    this.damageFlash.style.opacity = '0.32';
+    // Force layout so the next transition doesn't get coalesced with this set.
+    void this.damageFlash.offsetHeight;
+    this.damageFlash.style.transition = 'opacity 220ms ease-out';
+    this.damageFlash.style.opacity = '0';
   }
 
   update(hp: number, maxHp: number, essence: number, boss: { hp: number; maxHp: number } | null = null): void {

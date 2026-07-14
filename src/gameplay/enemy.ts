@@ -64,6 +64,8 @@ export class Enemy {
   readonly sprite: Sprite;
   /** Set true once dead so main.ts can trigger one-shot death effects (fire burst, victory, ...). */
   justDied = false;
+  /** Set for exactly one frame on a direct combat hit (not DoT ticks — those would spam the feedback every second with no player action behind them). main.ts reads and clears it to drive hit-stop/shake/particles. */
+  justHit = false;
   /** Set for exactly one frame when this enemy wants to fire a projectile at the player (fireImp, whisperOfDarkness). main.ts reads {dx,dy} and clears it. */
   pendingAttack: { dx: number; dy: number } | null = null;
   /** Set for exactly one frame when this enemy's contact hit should also drain the run's essence (essenceKeeper). main.ts reads and clears it. */
@@ -106,9 +108,10 @@ export class Enemy {
     this.sprite.y = y;
   }
 
-  takeDamage(amount: number): void {
+  takeDamage(amount: number, silent = false): void {
     if (this.dead) return;
     this.hp -= amount;
+    if (!silent) this.justHit = true;
     if (this.hp <= 0) {
       this.dead = true;
       this.justDied = true;
@@ -192,7 +195,7 @@ export class Enemy {
       if (this.poisonTickTimer >= 1) {
         this.poisonTickTimer -= 1;
         this.poisonTicksLeft--;
-        this.takeDamage(this.poisonDamagePerTick);
+        this.takeDamage(this.poisonDamagePerTick, true);
       }
     }
     if (this.burnTicksLeft > 0) {
@@ -200,7 +203,7 @@ export class Enemy {
       if (this.burnTickTimer >= 1) {
         this.burnTickTimer -= 1;
         this.burnTicksLeft--;
-        this.takeDamage(this.burnDamagePerTick);
+        this.takeDamage(this.burnDamagePerTick, true);
       }
     }
     if (this.blindTimer > 0) this.blindTimer -= dt;

@@ -21,6 +21,8 @@ export class Stage {
   private lastCamY = 0;
   private lastViewX = 0;
   private lastViewY = 0;
+  private shakeTime = 0;
+  private shakeMag = 0;
 
   constructor(viewportWidth: number, viewportHeight: number) {
     this.viewportWidth = viewportWidth;
@@ -50,8 +52,14 @@ export class Stage {
     window.addEventListener('resize', () => this.updateCamera(this.lastCamX, this.lastCamY));
   }
 
-  /** Follows (camX, camY) in world/sim-pixel space with a fixed-size viewport window, clamped to the level bounds. */
-  updateCamera(camX: number, camY: number, worldWidth = this.viewportWidth, worldHeight = this.viewportHeight): void {
+  /** Queues a brief camera shake — magnitude in world-px, duration in seconds. Repeated calls take the stronger/longer of the two rather than stacking, so overlapping hits don't fling the camera off wildly. */
+  addShake(magnitude: number, duration: number): void {
+    this.shakeMag = Math.max(this.shakeMag, magnitude);
+    this.shakeTime = Math.max(this.shakeTime, duration);
+  }
+
+  /** Follows (camX, camY) in world/sim-pixel space with a fixed-size viewport window, clamped to the level bounds. `dt` (seconds) decays any active shake — omit it for callers that don't need shake (e.g. camp/menu screens). */
+  updateCamera(camX: number, camY: number, worldWidth = this.viewportWidth, worldHeight = this.viewportHeight, dt = 0): void {
     this.lastCamX = camX;
     this.lastCamY = camY;
     const screenW = this.app.screen.width;
@@ -68,10 +76,17 @@ export class Stage {
     this.lastViewX = viewX;
     this.lastViewY = viewY;
 
+    if (this.shakeTime > 0) {
+      this.shakeTime = Math.max(0, this.shakeTime - dt);
+      if (this.shakeTime <= 0) this.shakeMag = 0;
+    }
+    const shakeX = this.shakeMag > 0 ? (Math.random() * 2 - 1) * this.shakeMag : 0;
+    const shakeY = this.shakeMag > 0 ? (Math.random() * 2 - 1) * this.shakeMag : 0;
+
     const letterboxX = (screenW - this.viewportWidth * scale) / 2;
     const letterboxY = (screenH - this.viewportHeight * scale) / 2;
-    this.world.x = letterboxX - viewX * scale;
-    this.world.y = letterboxY - viewY * scale;
+    this.world.x = letterboxX - viewX * scale + shakeX * scale;
+    this.world.y = letterboxY - viewY * scale + shakeY * scale;
   }
 
   /** World-space top-left corner of the fixed viewport window, for cropped rendering. */

@@ -373,7 +373,7 @@ export class Projectile {
         const dx = enemy.x - this.x;
         const dy = enemy.y - this.y;
         if (dx * dx + dy * dy <= enemy.hitRadius * enemy.hitRadius) {
-          this.hitEnemy(enemy, enemies);
+          this.hitEnemy(enemy, enemies, world);
           this.onImpact(world, enemies, this.x, this.y);
           if (this.spell.explodeOnExpiry) {
             this.detonate(world, enemies);
@@ -432,7 +432,7 @@ export class Projectile {
     this.sprite.y = this.y;
   }
 
-  private hitEnemy(enemy: Enemy, enemies: Enemy[]): void {
+  private hitEnemy(enemy: Enemy, enemies: Enemy[], world: World): void {
     const dmg = this.holyAdjustedDamage(enemy);
     enemy.takeDamage(dmg);
     if (this.opts.ignite) enemy.igniteFor(3, 2);
@@ -440,7 +440,7 @@ export class Projectile {
       enemy.poisonFor(this.spell.poisonTicks ?? 5, this.spell.poisonDamagePerTick);
     }
     if (this.spell.holy) enemy.blindFor(2.5);
-    if (this.spell.chainCount) this.chainToNearby(enemy, enemies, this.spell.chainCount, this.spell.chainRange ?? 60);
+    if (this.spell.chainCount) this.chainToNearby(enemy, enemies, this.spell.chainCount, this.spell.chainRange ?? 60, world);
     if (this.opts.split) {
       this.splitSpawns = this.buildSplitSpawns();
     }
@@ -451,10 +451,24 @@ export class Projectile {
     return this.damage;
   }
 
-  private chainToNearby(from: Enemy, enemies: Enemy[], hopsLeft: number, range: number): void {
+  private isStandingInWater(entity: { x: number; y: number }, world: World): boolean {
+    return world.get(Math.floor(entity.x), Math.floor(entity.y)) === Material.Water;
+  }
+
+  /**
+   * Chain lightning arcs much farther from a target standing in Water — an
+   * actual terrain-aware payoff for Ice Shard's freeze/thaw cycle and the
+   * acidSlime/drowned kinds that linger near water, not just "nearest enemy
+   * by straight-line distance" regardless of what's underfoot. Previously
+   * this was fully terrain-blind, which was flagged (correctly, verified
+   * against this exact code) as the one genuinely-missing physics/combat
+   * link during the design council pass.
+   */
+  private chainToNearby(from: Enemy, enemies: Enemy[], hopsLeft: number, range: number, world: World): void {
     if (hopsLeft <= 0) return;
+    const effectiveRange = this.isStandingInWater(from, world) ? range * 3 : range;
     let nearest: Enemy | null = null;
-    let nearestDist = range;
+    let nearestDist = effectiveRange;
     for (const enemy of enemies) {
       if (enemy.dead || enemy === from) continue;
       const dist = Math.hypot(enemy.x - from.x, enemy.y - from.y);
@@ -465,7 +479,7 @@ export class Projectile {
     }
     if (!nearest) return;
     nearest.takeDamage(this.damage);
-    this.chainToNearby(nearest, enemies, hopsLeft - 1, range);
+    this.chainToNearby(nearest, enemies, hopsLeft - 1, range, world);
   }
 
   private buildSplitSpawns(): Array<{ x: number; y: number; dirX: number; dirY: number }> {

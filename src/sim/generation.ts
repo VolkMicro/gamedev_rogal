@@ -175,6 +175,7 @@ export function generateMinesLevel(world: World, seed: number): GeneratedLevel {
     if (rand() < 0.5) essenceSpawns.push({ x: roomLeft + roomW * (rand() < 0.5 ? 0.2 : 0.8), y: floorY });
   };
 
+  let floorIndex = 0;
   while (prevExitY < h - BOSS_RESERVE) {
     const leftRoomW = randRange(rand, ROOM_W_MIN, ROOM_W_MAX);
     const rightRoomW = randRange(rand, ROOM_W_MIN, ROOM_W_MAX);
@@ -189,6 +190,22 @@ export function generateMinesLevel(world: World, seed: number): GeneratedLevel {
     const entryCenterX = entrySide === 'left' ? leftRoomLeft + leftRoomW / 2 : rightRoomLeft + rightRoomW / 2;
     connect(prevExitX, prevExitY, entryCenterX, roomTop, connectorW);
 
+    // First-floor-only "physics matters" opening beat: every run starts with
+    // a sand plug sealing the only way down, and a puddle sitting right
+    // above it. There is no way to make progress without digging (any
+    // starting spell clears Sand per the dig() fix) — and once the plug is
+    // cleared, the puddle visibly drains down through the freshly opened
+    // shaft on the next few sim ticks. This guarantees every player sees the
+    // falling-sand sim actually DO something, tied to their own action,
+    // within the first few seconds — before the first enemy, not after.
+    if (floorIndex === 0) {
+      const plugTop = prevExitY + 2;
+      const plugH = 14;
+      fillRect(prevExitX - connectorW / 2, plugTop, connectorW, plugH, Material.Sand);
+      const poolW = Math.min(18, startW - 10);
+      fillRect(spawnX - poolW / 2, spawnY - 8 + 5, poolW, 5, Material.Water);
+    }
+
     carveRect(leftRoomLeft, roomTop, leftRoomW, floorH);
     carveRect(rightRoomLeft, roomTop, rightRoomW, floorH);
 
@@ -198,7 +215,27 @@ export function generateMinesLevel(world: World, seed: number): GeneratedLevel {
     // left/right choice.
     const hallH = randRange(rand, 14, 22);
     const hallTop = roomTop + floorH - hallH - 4;
-    carveRect(leftRoomLeft + leftRoomW, hallTop, rightRoomLeft - (leftRoomLeft + leftRoomW), hallH);
+    const hallLeft = leftRoomLeft + leftRoomW;
+    const hallW = rightRoomLeft - hallLeft;
+    carveRect(hallLeft, hallTop, hallW, hallH);
+
+    // Water-gap crossing: the hallway floor drops away into a water pit for
+    // a short stretch, sized to fit inside one Ice Shard's freeze radius.
+    // Walking in un-frozen means falling into the pit and climbing back out
+    // — a real cost, not a hard gate (no run should ever REQUIRE a spell
+    // that a given wand loadout might not have equipped) — while freezing it
+    // with Ice Shard bridges straight across at normal floor level. This is
+    // the "make an existing interaction load-bearing" pass: Ice Shard
+    // already freezes Water (see World's ice/water handling); it just never
+    // mattered in an actual encounter before. Skipped on floor 0, which
+    // already has its own dedicated sand-dig/water-drain opening beat.
+    if (floorIndex > 0 && rand() < 0.32 && hallW > 40) {
+      const gapW = randRange(rand, 12, 16);
+      const pitDepth = randRange(rand, 20, 30);
+      const gapLeft = hallLeft + 14 + Math.floor(rand() * Math.max(1, hallW - gapW - 28));
+      carveRect(gapLeft, hallTop, gapW, hallH + pitDepth);
+      fillRect(gapLeft, hallTop + hallH, gapW, pitDepth, Material.Water);
+    }
 
     const depth = roomTop - spawnY;
     populateRoom(leftRoomLeft, roomTop, leftRoomW, floorH, depth, 0.4);
@@ -245,6 +282,7 @@ export function generateMinesLevel(world: World, seed: number): GeneratedLevel {
     prevExitX = exitCenterX;
     prevExitY = roomTop + floorH;
     entrySide = exitSide;
+    floorIndex++;
   }
 
   // Boss arena: a flat-floored room at a FIXED position near the bottom of

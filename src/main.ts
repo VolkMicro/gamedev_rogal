@@ -2,6 +2,7 @@ import { Graphics } from 'pixi.js';
 import { initTelegram } from './telegram';
 import { Stage } from './render/stage';
 import { SimRenderer } from './render/simRenderer';
+import { FxLayer } from './render/fx';
 import { World } from './sim/world';
 import { generateMinesLevel, type GeneratedLevel } from './sim/generation';
 import { Material } from './sim/materials';
@@ -64,6 +65,7 @@ async function main(): Promise<void> {
 
   const simRenderer = new SimRenderer(VIEWPORT_WIDTH, VIEWPORT_HEIGHT);
   stage.world.addChild(simRenderer.sprite);
+  const fx = new FxLayer(stage.world);
 
   const input = new InputController(stage.app.canvas);
   const stats = new StatsOverlay();
@@ -197,11 +199,19 @@ async function main(): Promise<void> {
   };
 
   let accumulatorMs = 0;
+  let hitStopTimer = 0;
 
   stage.app.ticker.add((ticker) => {
     const dtMs = ticker.deltaMS;
-    const dtSec = dtMs / 1000;
+    const realDtSec = dtMs / 1000;
     if (!running) return;
+
+    // Hit-stop: freeze all gameplay simulation for a brief real-time beat on
+    // an impactful hit/kill while still rendering (and still animating FX
+    // particles, which use realDtSec directly) — the classic "impact frame"
+    // that makes a hit read as landing instead of just a number changing.
+    if (hitStopTimer > 0) hitStopTimer = Math.max(0, hitStopTimer - realDtSec);
+    const dtSec = hitStopTimer > 0 ? 0 : realDtSec;
 
     wand.tick(dtSec);
     player.update(dtSec, input.moveX, input.consumeJump(), world);
@@ -240,8 +250,18 @@ async function main(): Promise<void> {
     const allEnemies = boss ? [...enemies, boss] : enemies;
     for (const enemy of allEnemies) enemy.update(dtSec, world, player);
     for (const enemy of allEnemies) {
+      const isBoss = enemy.kind === 'boss';
+      if (enemy.justHit) {
+        enemy.justHit = false;
+        fx.burst(enemy.x, enemy.y, 0xfff2c0, isBoss ? 8 : 5, isBoss ? 55 : 40, 0.16);
+        stage.addShake(isBoss ? 1.8 : 1, 0.07);
+        hitStopTimer = Math.max(hitStopTimer, isBoss ? 0.05 : 0.035);
+      }
       if (enemy.justDied) {
         enemy.justDied = false;
+        fx.burst(enemy.x, enemy.y, 0xffffff, isBoss ? 26 : 14, isBoss ? 90 : 65, isBoss ? 0.5 : 0.32);
+        stage.addShake(isBoss ? 4 : 2.2, isBoss ? 0.22 : 0.13);
+        hitStopTimer = Math.max(hitStopTimer, isBoss ? 0.12 : 0.08);
         if (enemy.kind === 'beetle') {
           const cx = Math.floor(enemy.x);
           const cy = Math.floor(enemy.y);
@@ -312,13 +332,20 @@ async function main(): Promise<void> {
     }
     if (pickups.some((p) => p.collected)) pickups = pickups.filter((p) => !p.collected);
 
-    accumulatorMs += dtMs;
+    if (player.justHit) {
+      player.justHit = false;
+      hud.flashDamage();
+      stage.addShake(1.4, 0.09);
+    }
+
+    accumulatorMs += dtSec * 1000;
     while (accumulatorMs >= SIM_DT_MS) {
       world.step();
       accumulatorMs -= SIM_DT_MS;
     }
 
-    stage.updateCamera(player.x, player.y, WORLD_WIDTH, WORLD_HEIGHT);
+    fx.update(realDtSec);
+    stage.updateCamera(player.x, player.y, WORLD_WIDTH, WORLD_HEIGHT, realDtSec);
     for (const enemy of enemies) enemy.sprite.visible = stage.isInView(enemy.x, enemy.y);
     if (boss) boss.sprite.visible = stage.isInView(boss.x, boss.y);
     for (const pickup of pickups) pickup.sprite.visible = stage.isInView(pickup.x, pickup.y);
