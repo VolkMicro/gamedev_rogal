@@ -572,7 +572,7 @@ export class Projectile {
       for (let dx = -r; dx <= r; dx++) {
         if (dx * dx + dy * dy > r * r) continue;
         const mat = world.get(cx + dx, cy + dy);
-        if (mat === Material.Stone || mat === Material.Wood) world.set(cx + dx, cy + dy, Material.Empty);
+        if (mat === Material.Stone || mat === Material.Wood || mat === Material.Sand) world.set(cx + dx, cy + dy, Material.Empty);
       }
     }
   }

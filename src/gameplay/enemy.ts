@@ -74,6 +74,9 @@ export class Enemy {
   private contactCooldown = 0;
   private collapserTimer = 1.5 + Math.random() * 1.5;
   private bossSlamTimer = BOSS_SLAM_INTERVAL;
+  private slamTelegraphTimer = 0;
+  private slamTargetX = 0;
+  private slamTargetY = 0;
   private animFrame: 0 | 1 = 0;
   private animTimer = Math.random() * ANIM_INTERVAL;
 
@@ -162,7 +165,14 @@ export class Enemy {
     this.sprite.scale.x = this.facing;
     this.sprite.x = this.x;
     this.sprite.y = this.y;
-    this.sprite.tint = this.poisonTicksLeft > 0 ? 0x9fe870 : this.burnTicksLeft > 0 ? 0xff9a5a : 0xffffff;
+    this.sprite.tint =
+      this.slamTelegraphTimer > 0
+        ? 0xff3030
+        : this.poisonTicksLeft > 0
+          ? 0x9fe870
+          : this.burnTicksLeft > 0
+            ? 0xff9a5a
+            : 0xffffff;
 
     const contactRadius = this.kind === 'sulfurTick' ? this.hitRadius + 12 : this.hitRadius + 6;
     if (!player.dead && this.contactCooldown <= 0 && distToPlayer <= contactRadius) {
@@ -242,7 +252,7 @@ export class Enemy {
     if (this.collapserTimer <= 0) {
       this.collapserTimer = 2.5 + Math.random() * 1.5;
       if (Math.abs(dxToPlayer) < 40 && distToPlayer < 100 && player.y < this.y) {
-        this.dropDebris(world, player, 3, 6);
+        this.dropDebris(world, player, player.x, player.y, 3, 6);
       }
     }
   }
@@ -437,14 +447,24 @@ export class Enemy {
     }
 
     this.bossSlamTimer -= dt;
-    if (this.bossSlamTimer <= 0) {
+    if (this.slamTelegraphTimer > 0) {
+      this.slamTelegraphTimer -= dt;
+      if (this.slamTelegraphTimer <= 0) this.dropDebris(world, player, this.slamTargetX, this.slamTargetY, 6, 14);
+    } else if (this.bossSlamTimer <= 0) {
       this.bossSlamTimer = BOSS_SLAM_INTERVAL;
-      // dropDebris centers on the PLAYER's own position, not the boss's — it's a
-      // "rocks fall near you" telegraphed AoE, not a projectile from the boss's
-      // location. Gate it on range or the boss could "hit" the player from
-      // anywhere in the level, including before they've even met it.
-      if (distToPlayer < BOSS_AGGRO_RANGE) this.dropDebris(world, player, 6, 14);
-      return;
+      // Telegraphs on the player's position AT THE MOMENT OF WARNING, not
+      // when it actually lands — the old version re-read the player's live
+      // position at impact, which (since it also used an oversized 4x-radius
+      // hit check) made the slam an unavoidable guaranteed hit every 3s and
+      // was the real reason the boss felt "unkillable": chip damage from
+      // this alone could exceed the player's max HP over one fight. Now it's
+      // a real telegraphed AoE — stepping away from the marked spot in the
+      // ~0.6s warning window avoids it entirely.
+      if (distToPlayer < BOSS_AGGRO_RANGE) {
+        this.slamTelegraphTimer = 0.6;
+        this.slamTargetX = player.x;
+        this.slamTargetY = player.y;
+      }
     }
 
     const stopDist = this.hitRadius + CHASE_STOP_MARGIN;
@@ -457,15 +477,31 @@ export class Enemy {
     }
   }
 
-  private dropDebris(world: World, player: Player, radius: number, damage: number): void {
-    const cx = Math.floor(player.x);
-    const cy = Math.floor(player.y) - 20;
+  /**
+   * Drops debris centered on (targetX, targetY) — for the boss this is the
+   * player's position AT TELEGRAPH TIME, frozen 0.6s before impact, not
+   * re-read live. The terrain-crumble effect is centered 20px above the
+   * target (rocks visibly fall from the ceiling toward it), but the DAMAGE
+   * check compares the player's live position against the ground-level
+   * target itself, not that raised crumble center — otherwise a player who
+   * never moves still stands 20px below the hit-check origin and the slam
+   * can never land at all (measured live: 0 hits across a 7s stationary
+   * fight). +6 pads for the player's own half-height so standing on the
+   * marked spot reliably hits, while stepping away during the ~0.6s warning
+   * (a player can cover ~30px in that time) reliably dodges it. Previously
+   * this used the crumble center with a radius*4 fudge, which was true
+   * unconditionally — an unavoidable guaranteed hit every 3s that made the
+   * boss fight effectively unwinnable regardless of skill.
+   */
+  private dropDebris(world: World, player: Player, targetX: number, targetY: number, radius: number, damage: number): void {
+    const cx = Math.floor(targetX);
+    const cy = Math.floor(targetY) - 20;
     for (let dy = -radius; dy <= radius; dy++) {
       for (let dx = -radius; dx <= radius; dx++) {
         if (dx * dx + dy * dy > radius * radius) continue;
         if (world.get(cx + dx, cy + dy) === Material.Stone) world.set(cx + dx, cy + dy, Material.Sand);
       }
     }
-    if (Math.hypot(player.x - cx, player.y - cy) < radius * 4) player.takeDamage(damage);
+    if (Math.hypot(player.x - targetX, player.y - targetY) < radius + 6) player.takeDamage(damage);
   }
 }

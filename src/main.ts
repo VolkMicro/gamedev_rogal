@@ -3,7 +3,7 @@ import { initTelegram } from './telegram';
 import { Stage } from './render/stage';
 import { SimRenderer } from './render/simRenderer';
 import { World } from './sim/world';
-import { generateMinesLevel } from './sim/generation';
+import { generateMinesLevel, type GeneratedLevel } from './sim/generation';
 import { Material } from './sim/materials';
 import { Player } from './gameplay/player';
 import { Enemy, type AnyEnemyKind } from './gameplay/enemy';
@@ -18,9 +18,11 @@ import { Camp } from './meta/camp';
 import { loadSprites } from './render/sprites';
 
 const ESSENCE_STEAL_AMOUNT = 3;
+/** Boss HP bar only shows once the player is actually near the arena — it exists (full HP) the whole run, so gating on distance instead of just "not dead" avoids showing a misleading full bar from floor 1 onward. */
+const BOSS_ENGAGE_RANGE = 260;
 
-const WORLD_WIDTH = 400;
-const WORLD_HEIGHT = 720;
+const WORLD_WIDTH = 640;
+const WORLD_HEIGHT = 980;
 const SIM_HZ = 60;
 const SIM_DT_MS = 1000 / SIM_HZ;
 
@@ -82,6 +84,7 @@ async function main(): Promise<void> {
   let runEssence = 0;
   let runSeed = 1;
   let running = false;
+  let currentLevel: GeneratedLevel | null = null;
 
   const camp = new Camp(save, () => {
     wand = new Wand(save.wandLoadout);
@@ -110,6 +113,7 @@ async function main(): Promise<void> {
 
     world = new World(WORLD_WIDTH, WORLD_HEIGHT);
     const level = generateMinesLevel(world, seed);
+    currentLevel = level;
     player.respawn(level.spawnX, level.spawnY);
 
     for (const spawn of level.enemySpawns) {
@@ -147,8 +151,10 @@ async function main(): Promise<void> {
       player: { x: number; y: number; hp: number; maxHp: number; dead: boolean };
       boss: { x: number; y: number; hp: number; maxHp: number; dead: boolean } | null;
       enemies: Array<{ x: number; y: number; hp: number; kind: string }>;
+      worldWidth: number;
       worldHeight: number;
       essence: number;
+      bossSpawn: { x: number; y: number } | null;
     };
     startRun(seed: number): void;
     /** True if (player.x+dx, player.y+dy) is open (not solid) — lets a test bot feel out terrain instead of moving blind. */
@@ -167,8 +173,10 @@ async function main(): Promise<void> {
       player: { x: player.x, y: player.y, hp: player.hp, maxHp: player.maxHp, dead: player.dead, ...player.debugPhysics() },
       boss: boss ? { x: boss.x, y: boss.y, hp: boss.hp, maxHp: boss.maxHp, dead: boss.dead } : null,
       enemies: enemies.map((e) => ({ x: e.x, y: e.y, hp: e.hp, kind: e.kind })),
+      worldWidth: WORLD_WIDTH,
       worldHeight: WORLD_HEIGHT,
       essence: runEssence,
+      bossSpawn: currentLevel?.bossSpawn ?? null,
     }),
     startRun: (seed: number) => {
       startRun(seed);
@@ -318,7 +326,8 @@ async function main(): Promise<void> {
     for (const ally of allies) ally.sprite.visible = stage.isInView(ally.x, ally.y);
     const viewOrigin = stage.getViewOriginWorld();
     simRenderer.render(world, viewOrigin.x, viewOrigin.y);
-    hud.update(player.hp, player.maxHp, runEssence);
+    const bossEngaged = boss && !boss.dead && Math.hypot(boss.x - player.x, boss.y - player.y) < BOSS_ENGAGE_RANGE;
+    hud.update(player.hp, player.maxHp, runEssence, bossEngaged ? { hp: boss!.hp, maxHp: boss!.maxHp } : null);
     stats.frame(dtMs, world.activeChunkCount(), world.totalChunkCount());
 
     if (player.dead) {
