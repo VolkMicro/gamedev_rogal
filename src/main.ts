@@ -15,13 +15,30 @@ import { Hud } from './gameplay/hud';
 import { loadSave, persistSave } from './meta/save';
 import { Camp } from './meta/camp';
 import { loadSprites } from './render/sprites';
+import { STICK_BASE_RADIUS, STICK_MARGIN } from './gameplay/touchControls';
 
-const VIEWPORT_WIDTH = 400;
-const VIEWPORT_HEIGHT = 240;
 const WORLD_WIDTH = 400;
 const WORLD_HEIGHT = 720;
 const SIM_HZ = 60;
 const SIM_DT_MS = 1000 / SIM_HZ;
+
+/**
+ * World-pixels shown along the screen's SHORTER dimension. Lower = more
+ * zoomed in. The old fixed 400x240 (landscape 5:3) viewport on a portrait
+ * phone screen meant Stage's letterboxing was bottlenecked by width, wasting
+ * most of the screen as black bars top/bottom while the character rendered
+ * tiny — this computes a viewport that always matches the current screen's
+ * own aspect ratio, so there's no letterboxing and the character reads
+ * clearly at typical phone sizes.
+ */
+const ZOOM_TARGET_PX = 170;
+
+function computeViewportSize(): { width: number; height: number } {
+  const screenW = window.innerWidth;
+  const screenH = window.innerHeight;
+  const scale = Math.min(screenW, screenH) / ZOOM_TARGET_PX;
+  return { width: Math.round(screenW / scale), height: Math.round(screenH / scale) };
+}
 
 interface EssencePickup {
   x: number;
@@ -36,6 +53,7 @@ async function main(): Promise<void> {
   const appEl = document.querySelector<HTMLDivElement>('#app')!;
   appEl.innerHTML = '';
 
+  const { width: VIEWPORT_WIDTH, height: VIEWPORT_HEIGHT } = computeViewportSize();
   const stage = new Stage(VIEWPORT_WIDTH, VIEWPORT_HEIGHT);
   await stage.init(appEl);
   await loadSprites();
@@ -49,7 +67,9 @@ async function main(): Promise<void> {
   Object.assign(jumpButton.style, {
     position: 'fixed',
     right: '12px',
-    bottom: '12px',
+    // Stacked above the aim joystick's idle position (bottom-right corner)
+    // so it doesn't overlap the now-visible stick graphic.
+    bottom: `${STICK_MARGIN + STICK_BASE_RADIUS * 2 + 14}px`,
     zIndex: '10',
   } satisfies Partial<CSSStyleDeclaration>);
   document.body.appendChild(jumpButton);

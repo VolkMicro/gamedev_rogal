@@ -34,7 +34,15 @@ export class Stage {
       background: '#050505',
       resizeTo: window,
       antialias: false,
-      resolution: Math.min(window.devicePixelRatio || 1, 2),
+      // Fixed at 1 regardless of devicePixelRatio: everything drawn on this
+      // canvas is deliberately blocky nearest-neighbor pixel art (no text or
+      // vector content lives here — HUD/Camp/joystick UI are separate DOM
+      // elements). A higher backing-store resolution buys zero visual
+      // improvement for that content while costing real fragment-shader
+      // fill-rate on high-DPI phones (2-3x devicePixelRatio is typical) —
+      // `image-rendering: pixelated` on the canvas (index.html) keeps the
+      // browser's own CSS upscale crisp instead of blurring it.
+      resolution: 1,
       autoDensity: true,
     });
     canvasHost.appendChild(this.app.canvas);

@@ -1,3 +1,5 @@
+import { TouchControls } from './touchControls';
+
 const STICK_RADIUS = 40;
 const AIM_DEADZONE = 8;
 
@@ -8,6 +10,8 @@ const AIM_DEADZONE = 8;
  * as aimX/aimY/aiming for the wand to read every frame.
  * Jump has its own corner button since the final control scheme (GDD §6)
  * doesn't reserve a gesture for it.
+ * Visual feedback for both sticks lives in TouchControls — this class stays
+ * focused on input state/logic.
  */
 export class InputController {
   moveX = 0;
@@ -23,9 +27,11 @@ export class InputController {
   private aimOriginY = 0;
   private keys = new Set<string>();
   private el: HTMLElement;
+  private touchControls: TouchControls;
 
   constructor(el: HTMLElement, jumpButton: HTMLElement) {
     this.el = el;
+    this.touchControls = new TouchControls();
     // Not passive: a drag can otherwise trigger the browser's native
     // image/canvas drag gesture or text selection, which silently steals
     // the rest of the pointer sequence (looks like "aiming randomly stops
@@ -65,6 +71,8 @@ export class InputController {
     this.moveX = 0;
     this.aiming = false;
     this.keys.clear();
+    this.touchControls.moveRelease();
+    this.touchControls.aimRelease();
   };
 
   private onKeyDown = (e: KeyboardEvent) => {
@@ -111,11 +119,13 @@ export class InputController {
       if (this.movePointerId !== null) return;
       this.movePointerId = e.pointerId;
       this.moveOriginX = e.clientX;
+      this.touchControls.moveActivate(e.clientX, e.clientY);
     } else {
       if (this.aimPointerId !== null) return;
       this.aimPointerId = e.pointerId;
       this.aimOriginX = e.clientX;
       this.aimOriginY = e.clientY;
+      this.touchControls.aimActivate(e.clientX, e.clientY);
     }
     // Guarantees this pointer's move/up events keep targeting `el` even if
     // it strays outside the element's bounds mid-drag — without this a fast
@@ -129,6 +139,7 @@ export class InputController {
       const dx = e.clientX - this.moveOriginX;
       const clamped = Math.max(-STICK_RADIUS, Math.min(STICK_RADIUS, dx));
       this.moveX = clamped / STICK_RADIUS;
+      this.touchControls.moveUpdate(this.moveX);
       e.preventDefault();
     } else if (e.pointerId === this.aimPointerId) {
       const dx = e.clientX - this.aimOriginX;
@@ -141,6 +152,8 @@ export class InputController {
       } else {
         this.aiming = false;
       }
+      const visualMag = Math.min(dist, STICK_RADIUS) / STICK_RADIUS;
+      this.touchControls.aimUpdate(dist > 0 ? (dx / dist) * visualMag : 0, dist > 0 ? (dy / dist) * visualMag : 0);
       e.preventDefault();
     }
   };
@@ -150,10 +163,12 @@ export class InputController {
       this.movePointerId = null;
       this.moveX = 0;
       this.updateKeyboardMove();
+      this.touchControls.moveRelease();
     } else if (e.pointerId === this.aimPointerId) {
       this.aimPointerId = null;
       this.aiming = false;
       this.updateKeyboardAim();
+      this.touchControls.aimRelease();
     }
   };
 }

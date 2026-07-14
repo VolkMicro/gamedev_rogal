@@ -70,52 +70,76 @@ export class Projectile {
 
   update(dt: number, world: World, enemies: Enemy[]): void {
     this.age += dt * 60;
-    if (!this.embedded) {
-      if (this.homing) this.steerTowardNearest(dt, enemies);
-      this.x += this.vx * dt;
-      this.y += this.vy * dt;
-    }
-    this.sprite.x = this.x;
-    this.sprite.y = this.y;
-
-    if (!world.inBounds(this.x, this.y)) {
-      this.dead = true;
-      return;
-    }
 
     if (this.age > this.spell.lifetime) {
       this.detonate(world, enemies);
       this.dead = true;
-      return;
-    }
-
-    if (!this.embedded && isSolidForPlayer(world.get(Math.floor(this.x), Math.floor(this.y)))) {
-      if (this.spell.explodeOnExpiry) {
-        // Bomb: stick in place and wait out its fuse instead of exploding on contact.
-        this.embedded = true;
-      } else {
-        if (this.spell.digRadius > 0) this.dig(world);
-        this.dead = true;
-      }
+      this.sprite.x = this.x;
+      this.sprite.y = this.y;
       return;
     }
 
     if (this.embedded) return;
 
-    for (const enemy of enemies) {
-      if (enemy.dead) continue;
-      const dx = enemy.x - this.x;
-      const dy = enemy.y - this.y;
-      if (dx * dx + dy * dy <= enemy.hitRadius * enemy.hitRadius) {
-        if (this.spell.explodeOnExpiry) {
-          this.detonate(world, enemies);
-        } else {
-          enemy.takeDamage(this.spell.damage);
-        }
+    if (this.homing) this.steerTowardNearest(dt, enemies);
+
+    // Advance in small fixed-size steps and check collision after EACH step,
+    // instead of moving the full frame distance then checking once at the
+    // endpoint. At this speed (up to ~340 world-px/s) a single slow/stuttery
+    // frame (common on mobile WebViews) can cover more distance than a thin
+    // wall or enemy is wide, so an end-of-frame-only check lets the shot
+    // visually tunnel through the first thing it touches and only register a
+    // hit much further along — exactly the "fires at the end, not on the
+    // first obstacle" bug this fixes.
+    const totalDist = Math.hypot(this.vx, this.vy) * dt;
+    const maxStep = 1.5;
+    const steps = Math.max(1, Math.ceil(totalDist / maxStep));
+    const stepDt = dt / steps;
+
+    for (let i = 0; i < steps; i++) {
+      this.x += this.vx * stepDt;
+      this.y += this.vy * stepDt;
+
+      if (!world.inBounds(this.x, this.y)) {
         this.dead = true;
+        this.sprite.x = this.x;
+        this.sprite.y = this.y;
         return;
       }
+
+      if (isSolidForPlayer(world.get(Math.floor(this.x), Math.floor(this.y)))) {
+        if (this.spell.explodeOnExpiry) {
+          // Bomb: stick in place and wait out its fuse instead of exploding on contact.
+          this.embedded = true;
+        } else {
+          if (this.spell.digRadius > 0) this.dig(world);
+          this.dead = true;
+        }
+        this.sprite.x = this.x;
+        this.sprite.y = this.y;
+        return;
+      }
+
+      for (const enemy of enemies) {
+        if (enemy.dead) continue;
+        const dx = enemy.x - this.x;
+        const dy = enemy.y - this.y;
+        if (dx * dx + dy * dy <= enemy.hitRadius * enemy.hitRadius) {
+          if (this.spell.explodeOnExpiry) {
+            this.detonate(world, enemies);
+          } else {
+            enemy.takeDamage(this.spell.damage);
+          }
+          this.dead = true;
+          this.sprite.x = this.x;
+          this.sprite.y = this.y;
+          return;
+        }
+      }
     }
+
+    this.sprite.x = this.x;
+    this.sprite.y = this.y;
   }
 
   private steerTowardNearest(dt: number, enemies: Enemy[]): void {
