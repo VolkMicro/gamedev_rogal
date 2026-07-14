@@ -44,7 +44,7 @@ export class World {
   }
 
   get(x: number, y: number): Material {
-    return this.material[this.idx(x, y)] as Material;
+    return this.material[this.idx(x | 0, y | 0)] as Material;
   }
 
   /** Bulk-fills the whole grid without per-cell chunk bookkeeping. Only for level generation, before the first step(). */
@@ -53,22 +53,39 @@ export class World {
     this.aux.fill(0);
   }
 
-  /** Sets a cell directly and wakes its chunk (+ neighbor chunks if on a border). Use for scene setup / spawners. */
+  /**
+   * Sets a cell directly and wakes its chunk (+ neighbor chunks if on a
+   * border). Use for scene setup / spawners.
+   *
+   * Floors x/y first: `material` is a Uint8Array, and per the JS spec a
+   * TypedArray write with a non-integer numeric index is a silent no-op
+   * (not an error, not a warning) — anything computed via division-by-2
+   * centering math (extremely common here: `left = center - width / 2`)
+   * can land on a `.5` coordinate, which would otherwise carve nothing at
+   * all with zero indication anything went wrong. Cost this once here
+   * rather than trusting every call site to remember to floor.
+   */
   set(x: number, y: number, mat: Material, aux = 0): void {
-    if (!this.inBounds(x, y)) return;
-    const i = this.idx(x, y);
+    const fx = x | 0;
+    const fy = y | 0;
+    if (!this.inBounds(fx, fy)) return;
+    const i = this.idx(fx, fy);
     this.material[i] = mat;
     this.aux[i] = aux;
-    this.wake(x, y);
+    this.wake(fx, fy);
   }
 
   isEmpty(x: number, y: number): boolean {
-    return this.inBounds(x, y) && this.material[this.idx(x, y)] === Material.Empty;
+    const fx = x | 0;
+    const fy = y | 0;
+    return this.inBounds(fx, fy) && this.material[this.idx(fx, fy)] === Material.Empty;
   }
 
   isSolidForPlayer(x: number, y: number): boolean {
-    if (!this.inBounds(x, y)) return true;
-    return MATERIALS[this.material[this.idx(x, y)] as Material].solidForPlayer;
+    const fx = x | 0;
+    const fy = y | 0;
+    if (!this.inBounds(fx, fy)) return true;
+    return MATERIALS[this.material[this.idx(fx, fy)] as Material].solidForPlayer;
   }
 
   private chunkIndex(cx: number, cy: number): number {

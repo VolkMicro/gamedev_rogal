@@ -1,6 +1,38 @@
 import { Sprite, Texture } from 'pixi.js';
 import type { World } from '../sim/world';
-import { MATERIAL_COLOR_RGBA } from '../sim/materials';
+import { Material, MATERIAL_COLOR_RGBA } from '../sim/materials';
+
+const NOISE_TILE_SIZE = 32;
+const NOISE_TILE_MASK = NOISE_TILE_SIZE - 1;
+
+/** Deterministic cheap hash — same shape as sim/world.ts's hash2, kept local since this is a rendering-only concern. */
+function hash2(x: number, y: number): number {
+  let h = (x * 374761393 + y * 668265263) | 0;
+  h = (h ^ (h >>> 13)) * 1274126177;
+  return (h ^ (h >>> 16)) >>> 0;
+}
+
+/**
+ * Precomputed tileable brightness-jitter pattern (one lookup per pixel
+ * instead of hashing every pixel every frame) so flat material fills read
+ * as roughed-up stone/wood grain instead of a solid color blob.
+ */
+const NOISE_TILE = new Int8Array(NOISE_TILE_SIZE * NOISE_TILE_SIZE);
+for (let y = 0; y < NOISE_TILE_SIZE; y++) {
+  for (let x = 0; x < NOISE_TILE_SIZE; x++) {
+    NOISE_TILE[y * NOISE_TILE_SIZE + x] = (hash2(x, y) % 16) - 8;
+  }
+}
+
+const STONE_BRICK_W = 8; // power of two — cheap `& (w-1)` instead of `%`
+const STONE_BRICK_H = 4;
+const WOOD_PLANK_W = 3;
+const MORTAR_DARKEN = 26;
+const GRAIN_DARKEN = 20;
+
+function clamp255(v: number): number {
+  return v < 0 ? 0 : v > 255 ? 255 : v;
+}
 
 /**
  * Owns an offscreen canvas fixed at the sim's internal resolution
@@ -57,11 +89,47 @@ export class SimRenderer {
       const worldY = oy + row;
       let srcIdx = worldY * world.width + ox;
       let dstIdx = row * vw * 4;
+      const brickRowOffset = (worldY >> 2) & 1 ? STONE_BRICK_W >> 1 : 0;
+      const brickLocalY = worldY & (STONE_BRICK_H - 1);
+      const noiseRow = (worldY & NOISE_TILE_MASK) * NOISE_TILE_SIZE;
       for (let col = 0; col < copyW; col++) {
-        const o = src[srcIdx] * 4;
-        dst[dstIdx] = lut[o];
-        dst[dstIdx + 1] = lut[o + 1];
-        dst[dstIdx + 2] = lut[o + 2];
+        const matId = src[srcIdx];
+        const o = matId * 4;
+        let r = lut[o];
+        let g = lut[o + 1];
+        let b = lut[o + 2];
+
+        if (matId === Material.Stone) {
+          const worldX = ox + col;
+          const isMortar = ((worldX + brickRowOffset) & (STONE_BRICK_W - 1)) === 0 || brickLocalY === 0;
+          if (isMortar) {
+            r -= MORTAR_DARKEN;
+            g -= MORTAR_DARKEN;
+            b -= MORTAR_DARKEN;
+          } else {
+            const n = NOISE_TILE[noiseRow + (worldX & NOISE_TILE_MASK)];
+            r += n;
+            g += n;
+            b += n;
+          }
+        } else if (matId === Material.Wood) {
+          const worldX = ox + col;
+          const isGrainLine = worldX % WOOD_PLANK_W === 0;
+          if (isGrainLine) {
+            r -= GRAIN_DARKEN;
+            g -= GRAIN_DARKEN;
+            b -= GRAIN_DARKEN;
+          } else {
+            const n = NOISE_TILE[noiseRow + (worldX & NOISE_TILE_MASK)];
+            r += n >> 1;
+            g += n >> 1;
+            b += n >> 1;
+          }
+        }
+
+        dst[dstIdx] = clamp255(r);
+        dst[dstIdx + 1] = clamp255(g);
+        dst[dstIdx + 2] = clamp255(b);
         dst[dstIdx + 3] = 255;
         srcIdx++;
         dstIdx += 4;

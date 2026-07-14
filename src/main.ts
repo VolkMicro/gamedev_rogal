@@ -15,7 +15,6 @@ import { Hud } from './gameplay/hud';
 import { loadSave, persistSave } from './meta/save';
 import { Camp } from './meta/camp';
 import { loadSprites } from './render/sprites';
-import { STICK_BASE_RADIUS, STICK_MARGIN } from './gameplay/touchControls';
 
 const WORLD_WIDTH = 400;
 const WORLD_HEIGHT = 720;
@@ -61,20 +60,7 @@ async function main(): Promise<void> {
   const simRenderer = new SimRenderer(VIEWPORT_WIDTH, VIEWPORT_HEIGHT);
   stage.world.addChild(simRenderer.sprite);
 
-  const jumpButton = document.createElement('button');
-  jumpButton.textContent = 'Прыжок';
-  jumpButton.className = 'kenney-btn';
-  Object.assign(jumpButton.style, {
-    position: 'fixed',
-    right: '12px',
-    // Stacked above the aim joystick's idle position (bottom-right corner)
-    // so it doesn't overlap the now-visible stick graphic.
-    bottom: `${STICK_MARGIN + STICK_BASE_RADIUS * 2 + 14}px`,
-    zIndex: '10',
-  } satisfies Partial<CSSStyleDeclaration>);
-  document.body.appendChild(jumpButton);
-
-  const input = new InputController(stage.app.canvas, jumpButton);
+  const input = new InputController(stage.app.canvas);
   const stats = new StatsOverlay();
   const hud = new Hud();
 
@@ -161,6 +147,8 @@ async function main(): Promise<void> {
     startRun(seed: number): void;
     /** True if (player.x+dx, player.y+dy) is open (not solid) — lets a test bot feel out terrain instead of moving blind. */
     isOpen(dx: number, dy: number): boolean;
+    /** Raw material id at ABSOLUTE world coordinates (not relative to player) — for debugging the generator directly. */
+    getCell(x: number, y: number): number;
     input: InputController;
   }
   (window as unknown as { __wickDebug: WickDebug }).__wickDebug = {
@@ -178,6 +166,7 @@ async function main(): Promise<void> {
       running = true;
     },
     isOpen: (dx: number, dy: number) => !world.isSolidForPlayer(Math.floor(player.x + dx), Math.floor(player.y + dy)),
+    getCell: (x: number, y: number) => world.get(x, y),
     input,
   };
 

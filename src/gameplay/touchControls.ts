@@ -75,7 +75,7 @@ export class TouchControls {
       background: 'rgba(255,255,255,0.55)',
       border: '1px solid rgba(255,255,255,0.8)',
     });
-    this.moveLabel = makeLabel('движение');
+    this.moveLabel = makeLabel('движение · вверх = прыжок');
 
     this.aimBase = makeCircle(BASE_RADIUS * 2, {
       border: '2px solid rgba(138,214,255,0.32)',
@@ -122,9 +122,9 @@ export class TouchControls {
     this.moveLabel.style.opacity = '0';
   }
 
-  /** normX: -1..1, horizontal only — the move stick has no vertical gameplay effect yet. */
-  moveUpdate(normX: number): void {
-    this.placeKnob(this.moveKnob, this.moveCenter, normX, 0);
+  /** normX/normY: -1..1 each. Dragging up (negative normY) far enough queues a jump — see InputController. */
+  moveUpdate(normX: number, normY: number): void {
+    this.placeKnob(this.moveKnob, this.moveCenter, normX, normY);
   }
 
   moveRelease(): void {

@@ -51,10 +51,50 @@
       .kenney-btn:active:not(:disabled) {
         filter: brightness(0.85);
       }
+      /* The game is designed for landscape (wide side-view level, thumbs on
+         left/right for move+aim). Most platforms won't force-rotate a
+         webview, so this prompt is the fallback — shown whenever the
+         viewport is taller than it is wide, blocking input to the game
+         underneath until the player actually rotates their phone. */
+      #rotate-prompt {
+        display: none;
+        position: fixed;
+        inset: 0;
+        z-index: 100;
+        background: #050505;
+        color: #e8d9b0;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        font: 15px 'Courier New', monospace;
+        padding: 24px;
+        box-sizing: border-box;
+      }
+      #rotate-prompt .icon {
+        font-size: 48px;
+        margin-bottom: 12px;
+        animation: rotate-hint 1.6s ease-in-out infinite;
+      }
+      @keyframes rotate-hint {
+        0%,
+        100% {
+          transform: rotate(0deg);
+        }
+        50% {
+          transform: rotate(90deg);
+        }
+      }
+      @media (orientation: portrait) {
+        #rotate-prompt {
+          display: flex;
+        }
+      }
     </style>
   </head>
   <body>
     <div id="app"></div>
+    <div id="rotate-prompt"><div class="icon">📱</div><div>Поверни телефон горизонтально</div></div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
