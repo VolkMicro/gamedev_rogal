@@ -11,7 +11,10 @@ export class Hud {
     Object.assign(container.style, {
       position: 'fixed',
       bottom: '8px',
-      left: '8px',
+      // Offset past Telegram's overlay when fake-landscape is active — the
+      // game-left edge sits under the portrait status bar/«Закрыть» button
+      // (var set by src/orientation.ts, 0px in true landscape).
+      left: 'calc(8px + var(--game-safe-left, 0px))',
       zIndex: '10',
       font: '12px monospace',
       color: '#eee',

@@ -1,4 +1,4 @@
-import { effectiveSize } from '../orientation';
+import { effectiveSize, gameSafeInsets } from '../orientation';
 
 export const STICK_BASE_RADIUS = 42;
 const BASE_RADIUS = STICK_BASE_RADIUS;
@@ -92,15 +92,27 @@ export class TouchControls {
     this.resetIdlePositions();
     this.moveRelease();
     this.aimRelease();
-    window.addEventListener('resize', () => this.resetIdlePositions());
+    window.addEventListener('resize', () => {
+      this.resetIdlePositions();
+      // Re-park both sticks at the recomputed corners; without this a
+      // resize/orientation change leaves the visuals at the stale spot
+      // until the next touch-release. Mid-drag this snaps the knob home
+      // (rare enough not to matter — a resize mid-fight is already chaos).
+      this.moveRelease();
+      this.aimRelease();
+    });
   }
 
   private resetIdlePositions(): void {
     // Effective (game-space) dims — the sticks live inside the rotated body
     // under fake-landscape, so raw window dims would park them off-screen.
+    // Safe insets push the idle corners clear of Telegram's own overlay UI
+    // (status bar/«Закрыть» on the game-left edge, home indicator on the
+    // game-right edge) that sits on top of the rotated page.
     const { width: w, height: h } = effectiveSize();
-    this.moveIdle = { x: MARGIN + BASE_RADIUS, y: h - MARGIN - BASE_RADIUS };
-    this.aimIdle = { x: w - MARGIN - BASE_RADIUS, y: h - MARGIN - BASE_RADIUS };
+    const insets = gameSafeInsets();
+    this.moveIdle = { x: insets.left + MARGIN + BASE_RADIUS, y: h - MARGIN - BASE_RADIUS };
+    this.aimIdle = { x: w - insets.right - MARGIN - BASE_RADIUS, y: h - MARGIN - BASE_RADIUS };
     if (this.moveCenter.x === 0 && this.moveCenter.y === 0) this.moveCenter = { ...this.moveIdle };
     if (this.aimCenter.x === 0 && this.aimCenter.y === 0) this.aimCenter = { ...this.aimIdle };
   }
