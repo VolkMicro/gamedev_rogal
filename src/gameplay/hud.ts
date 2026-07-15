@@ -7,49 +7,60 @@ export class Hud {
   private damageFlash: HTMLDivElement;
 
   constructor() {
+    // Top-center cluster: HP bar + essence side by side. Center placement
+    // (per UI review with the user): always visible, thumbs never cover it,
+    // and Telegram's overlay buttons hug the corners/edges so the middle is
+    // safe in both real and fake landscape. The old bottom-left spot sat
+    // directly under the move stick.
     const container = document.createElement('div');
     Object.assign(container.style, {
       position: 'fixed',
-      bottom: '8px',
-      // Offset past Telegram's overlay when fake-landscape is active — the
-      // game-left edge sits under the portrait status bar/«Закрыть» button
-      // (var set by src/orientation.ts, 0px in true landscape).
-      left: 'calc(8px + var(--game-safe-left, 0px))',
+      top: '8px',
+      left: '50%',
+      transform: 'translateX(-50%)',
+      display: 'flex',
+      alignItems: 'center',
+      gap: '10px',
       zIndex: '10',
-      font: '12px monospace',
+      font: 'bold 13px monospace',
       color: '#eee',
     } satisfies Partial<CSSStyleDeclaration>);
 
+    const heart = document.createElement('div');
+    heart.textContent = '❤';
+    heart.style.color = '#e05252';
+
     const hpTrack = document.createElement('div');
     Object.assign(hpTrack.style, {
-      width: '120px',
-      height: '10px',
-      background: 'rgba(255,255,255,0.15)',
-      border: '1px solid #444',
+      width: '170px',
+      height: '13px',
+      background: 'rgba(0,0,0,0.55)',
+      border: '1px solid #6b5a3a',
     } satisfies Partial<CSSStyleDeclaration>);
     this.hpFill = document.createElement('div');
     Object.assign(this.hpFill.style, {
       height: '100%',
-      background: '#c94f4f',
+      background: 'linear-gradient(#d96a5a, #b23a2e)',
       width: '100%',
+      transition: 'width 120ms linear',
     } satisfies Partial<CSSStyleDeclaration>);
     hpTrack.appendChild(this.hpFill);
 
     this.essenceEl = document.createElement('div');
-    this.essenceEl.style.marginTop = '4px';
-    this.essenceEl.textContent = 'Эссенция: 0';
+    this.essenceEl.style.color = '#ffd15c';
+    this.essenceEl.textContent = '✦ 0';
 
-    container.appendChild(hpTrack);
-    container.appendChild(this.essenceEl);
+    container.append(heart, hpTrack, this.essenceEl);
     document.body.appendChild(container);
 
-    // Boss HP bar: top-center, only shown once the boss exists — without any
-    // visible feedback on its health, a slow-but-working fight reads as an
-    // "unkillable" boss even when damage is landing.
+    // Boss HP bar: right below the player's top-center cluster, only shown
+    // near the boss — without any visible feedback on its health, a
+    // slow-but-working fight reads as an "unkillable" boss even when damage
+    // is landing.
     this.bossContainer = document.createElement('div');
     Object.assign(this.bossContainer.style, {
       position: 'fixed',
-      top: '10px',
+      top: '30px',
       left: '50%',
       transform: 'translateX(-50%)',
       zIndex: '10',
@@ -129,7 +140,7 @@ export class Hud {
 
   update(hp: number, maxHp: number, essence: number, boss: { hp: number; maxHp: number } | null = null): void {
     this.hpFill.style.width = `${Math.max(0, (hp / maxHp) * 100)}%`;
-    this.essenceEl.textContent = `Эссенция: ${essence}`;
+    this.essenceEl.textContent = `✦ ${essence}`;
     if (boss) {
       this.bossContainer.style.display = '';
       this.bossFill.style.width = `${Math.max(0, (boss.hp / boss.maxHp) * 100)}%`;
