@@ -39,6 +39,8 @@ export class Player {
   private facing = 1;
   private knockbackTimer = 0;
   private squashTimer = 0;
+  private recoilTimer = 0;
+  private recoilDir = 1;
   /** Set for exactly one frame whenever damage actually lands (not absorbed by invuln). main.ts reads and clears it to drive hit-feedback (shake/flash). */
   justHit = false;
   readonly sprite: Sprite;
@@ -50,8 +52,8 @@ export class Player {
     this.sprite.anchor.set(0.5, 0.5);
   }
 
-  debugPhysics(): { vx: number; vy: number; grounded: boolean; knockbackTimer: number } {
-    return { vx: this.vx, vy: this.vy, grounded: this.grounded, knockbackTimer: this.knockbackTimer };
+  debugPhysics(): { vx: number; vy: number; grounded: boolean; knockbackTimer: number; facing: number } {
+    return { vx: this.vx, vy: this.vy, grounded: this.grounded, knockbackTimer: this.knockbackTimer, facing: this.facing };
   }
 
   /** Applies camp perk levels (GDD §2 perk branch) before a run starts. fireResist: 0..1 damage multiplier reduction. */
@@ -79,6 +81,12 @@ export class Player {
     if (this.hp <= 0) this.dead = true;
   }
 
+  /** Brief visual kickback opposite the cast direction — called by main.ts on every successful cast. */
+  castKick(dirX: number): void {
+    this.recoilTimer = 0.08;
+    this.recoilDir = dirX >= 0 ? 1 : -1;
+  }
+
   /** Shoves the player away from a hit source so contact damage can't glue them in place. */
   knockback(dirX: number, dirY: number): void {
     this.vx = dirX * KNOCKBACK_SPEED;
@@ -91,7 +99,7 @@ export class Player {
     this.knockbackTimer = KNOCKBACK_DURATION;
   }
 
-  update(dt: number, moveX: number, jumpPressed: boolean, world: World): void {
+  update(dt: number, moveX: number, jumpPressed: boolean, world: World, aimX: number | null = null): void {
     if (this.dead) return;
     if (this.invulnTimer > 0) this.invulnTimer -= dt;
 
@@ -119,25 +127,51 @@ export class Player {
     // Landing squash — only from a real fall, not every grounded frame.
     if (this.grounded && wasAirborne && fallSpeedBefore > 100) this.squashTimer = 0.14;
 
-    if (Math.abs(this.vx) > 2) {
+    // Facing: aim direction wins while shooting (twin-stick standard — you
+    // can strafe backwards), then the HELD movement input. Never derived
+    // from velocity: knockback shoves set vx away from the enemy, and
+    // velocity-based facing visibly spun the sprite "жопой вперёд" (walking
+    // butt-first) after every hit and on slope slides.
+    if (aimX !== null && Math.abs(aimX) > 0.15) {
+      this.facing = aimX > 0 ? 1 : -1;
+    } else if (moveX !== 0 && this.knockbackTimer <= 0) {
+      this.facing = moveX > 0 ? 1 : -1;
+    }
+
+    // Walk cycle only when actually walking under player input — a
+    // knockback slide with pumping legs read as broken.
+    const walking = this.grounded && moveX !== 0 && this.knockbackTimer <= 0;
+    if (walking) {
       this.walkTimer += dt;
       if (this.walkTimer >= WALK_FRAME_INTERVAL) {
         this.walkTimer = 0;
         this.legsApart = !this.legsApart;
         this.sprite.texture = playerTexture(this.legsApart);
       }
-      this.facing = this.vx > 0 ? 1 : -1;
     } else if (this.legsApart) {
       this.legsApart = false;
       this.sprite.texture = playerTexture(false);
     }
-    // Squash-and-stretch on landing: wide+short easing back to normal. Pure
-    // scale trickery on the existing sprite — no extra art needed for the
-    // character to stop feeling like a sliding cardboard cutout.
+
+    // Pose layer, all pure scale/offset trickery on the existing sprite (no
+    // extra art): landing squash, airborne stretch (rising) / lean (falling),
+    // and a 1-2px cast-recoil kick opposite the shot.
     if (this.squashTimer > 0) this.squashTimer = Math.max(0, this.squashTimer - dt);
+    if (this.recoilTimer > 0) this.recoilTimer = Math.max(0, this.recoilTimer - dt);
     const squash = this.squashTimer / 0.14;
-    this.sprite.scale.set(this.facing * (1 + squash * 0.25), 1 - squash * 0.25);
-    this.sprite.x = this.x;
+    let sx = 1 + squash * 0.25;
+    let sy = 1 - squash * 0.25;
+    if (!this.grounded) {
+      if (this.vy < -20) {
+        sy *= 1.1;
+        sx *= 0.92;
+      } else if (this.vy > 80) {
+        sy *= 1.05;
+        sx *= 0.95;
+      }
+    }
+    this.sprite.scale.set(this.facing * sx, sy);
+    this.sprite.x = this.x + (this.recoilTimer > 0 ? -this.recoilDir * 1.5 : 0);
     this.sprite.y = this.y;
 
     if (world.get(Math.floor(this.x), Math.floor(this.y)) === Material.Fire) {

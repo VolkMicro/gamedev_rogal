@@ -251,7 +251,7 @@ async function main(): Promise<void> {
     const dtSec = hitStopTimer > 0 ? 0 : realDtSec;
 
     wand.tick(dtSec);
-    player.update(dtSec, input.moveX, input.consumeJump(), world);
+    player.update(dtSec, input.moveX, input.consumeJump(), world, input.aiming ? input.aimX : null);
 
     if (input.aiming && !player.dead) {
       const cast = wand.tryCast();
@@ -269,6 +269,7 @@ async function main(): Promise<void> {
         if (cast.spell === 'bloodSpear') opts.damageOverride = Math.max(1, Math.round(player.hp * 0.35));
 
         const angle = Math.atan2(input.aimY, input.aimX);
+        player.castKick(Math.cos(angle));
         const spreadAngles = mods.includes('triple') ? [-0.28, 0, 0.28] : [0];
         for (const spread of spreadAngles) {
           const a = angle + spread;
