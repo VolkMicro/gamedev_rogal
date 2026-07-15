@@ -24,6 +24,10 @@ export class Hud {
       zIndex: '10',
       font: 'bold 13px monospace',
       color: '#eee',
+      // Display-only: without this the cluster silently steals pointerdown
+      // from the canvas underneath — an aim drag starting on/near the HP
+      // bar never reached the input handler at all.
+      pointerEvents: 'none',
     } satisfies Partial<CSSStyleDeclaration>);
 
     const heart = document.createElement('div');
@@ -65,6 +69,7 @@ export class Hud {
       transform: 'translateX(-50%)',
       zIndex: '10',
       display: 'none',
+      pointerEvents: 'none',
     } satisfies Partial<CSSStyleDeclaration>);
     const bossTrack = document.createElement('div');
     Object.assign(bossTrack.style, {

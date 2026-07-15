@@ -152,6 +152,19 @@ export class Player {
     const nx = this.x + dx;
     const ny = this.y + dy;
     if (this.collidesAt(nx, ny, world)) {
+      // Step-up assist: a horizontal move blocked only by a low snag (a few
+      // px of rubble, a thin ledge edge) walks over it instead of stopping
+      // dead. Digging constantly produces this kind of micro-debris, and
+      // without the assist the player "sticks" on every 1-3px leftover.
+      if (dx !== 0 && dy === 0) {
+        for (let lift = 1; lift <= 4; lift++) {
+          if (!this.collidesAt(nx, this.y - lift, world)) {
+            this.x = nx;
+            this.y -= lift;
+            return false;
+          }
+        }
+      }
       if (dx !== 0) this.vx = 0;
       if (dy !== 0) this.vy = dy > 0 ? 0 : this.vy;
       return true;

@@ -165,6 +165,10 @@ export class World {
       this.updateIce(x, y);
       return;
     }
+    if (mat === Material.Stone || mat === Material.Wood) {
+      this.crumbleIfUnsupported(x, y, mat);
+      return;
+    }
     const state = MATERIALS[mat].state;
     if (state === MaterialState.Powder) this.updatePowder(x, y, mat);
     else if (state === MaterialState.Liquid) {
@@ -176,6 +180,22 @@ export class World {
       else if (mat === Material.Acid) this.updateAcidEffects(x, y);
       this.updateLiquid(x, y, mat);
     } else if (state === MaterialState.Fire) this.updateFire(x, y);
+  }
+
+  /**
+   * A Stone/Wood cell with NO solid orthogonal neighbor has nothing holding
+   * it up — digging and explosions constantly leave these single-pixel
+   * remnants floating mid-air, and the player visibly snags/hangs on them
+   * (reported: "застреваю в оставшемся одном пикселе и вишу на нём"). Stone
+   * crumbles into falling Sand (debris), Wood just breaks away. Only runs
+   * for cells in ACTIVE chunks (digging wakes them), so the intact bulk of
+   * the level never pays for this check.
+   */
+  private crumbleIfUnsupported(x: number, y: number, mat: Material): void {
+    if (this.isSolidForPlayer(x + 1, y) || this.isSolidForPlayer(x - 1, y) || this.isSolidForPlayer(x, y + 1) || this.isSolidForPlayer(x, y - 1)) {
+      return;
+    }
+    this.set(x, y, mat === Material.Stone ? Material.Sand : Material.Empty);
   }
 
   private igniteFlammableNeighbor(nx: number, ny: number, chancePercent: number): void {

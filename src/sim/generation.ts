@@ -158,7 +158,10 @@ export function generateMinesLevel(world: World, seed: number): GeneratedLevel {
       const ledgeW = Math.floor(roomW * (0.3 + rand() * 0.25));
       const ledgeLeft = roomLeft + 6 + Math.floor(rand() * Math.max(1, roomW - ledgeW - 12));
       const ledgeY = roomTop + Math.floor(roomH * (0.35 + rand() * 0.25));
+      // 2px thick — standing on a 1px line read as "hanging in mid-air on
+      // nothing" on real screens; two rows reads as an actual plank.
       hline(ledgeLeft, ledgeLeft + ledgeW, ledgeY, Material.Wood);
+      hline(ledgeLeft, ledgeLeft + ledgeW, ledgeY + 1, Material.Wood);
     }
 
     const floorY = roomTop + roomH - 8;

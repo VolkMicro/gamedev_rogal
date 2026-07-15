@@ -58,7 +58,11 @@ export function gameSafeInsets(): { left: number; right: number } {
   const sysBottom = tg?.safeAreaInset?.bottom ?? 0;
   return {
     left: Math.max(110, sysTop + headerTop + 10),
-    right: Math.max(24, sysBottom),
+    // The game-right edge is the portrait BOTTOM — the iOS home-indicator
+    // swipe zone. A drag that strays into it gets eaten/cancelled by the
+    // system, which reads as "the aim stick randomly stops working", so the
+    // stick idles well clear of it.
+    right: Math.max(60, sysBottom + 20),
   };
 }
 
