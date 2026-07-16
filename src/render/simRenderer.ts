@@ -1,6 +1,7 @@
 import { Sprite, Texture } from 'pixi.js';
 import type { World } from '../sim/world';
 import { Material, MATERIAL_COLOR_RGBA } from '../sim/materials';
+import { FLOODED_START_FRACTION } from '../sim/generation';
 
 const NOISE_TILE_SIZE = 32;
 const NOISE_TILE_MASK = NOISE_TILE_SIZE - 1;
@@ -84,9 +85,14 @@ export class SimRenderer {
     const lut = MATERIAL_COLOR_RGBA;
     const copyW = Math.min(vw, world.width - ox);
     const copyH = Math.min(vh, world.height - oy);
+    const floodedStartY = world.height * FLOODED_START_FRACTION;
     if (copyW < vw || copyH < vh) dst.fill(0);
     for (let row = 0; row < copyH; row++) {
       const worldY = oy + row;
+      // Flooded Caverns palette: stone below the biome line shifts cold and
+      // damp (teal-ish) so crossing into biome #2 is VISIBLE, not just a
+      // different spawn table.
+      const flooded = worldY > floodedStartY;
       let srcIdx = worldY * world.width + ox;
       let dstIdx = row * vw * 4;
       const brickRowOffset = (worldY >> 2) & 1 ? STONE_BRICK_W >> 1 : 0;
@@ -101,6 +107,11 @@ export class SimRenderer {
 
         if (matId === Material.Stone) {
           const worldX = ox + col;
+          if (flooded) {
+            r -= 18;
+            g += 2;
+            b += 18;
+          }
           const isMortar = ((worldX + brickRowOffset) & (STONE_BRICK_W - 1)) === 0 || brickLocalY === 0;
           if (isMortar) {
             r -= MORTAR_DARKEN;

@@ -216,6 +216,8 @@ async function main(): Promise<void> {
     equipWand(spellIds: string[]): void;
     /** Test-only: grants run essence directly, to exercise the upgrade-threshold flow without hunting pickups. */
     addEssence(amount: number): void;
+    /** Test-only: moves the player to absolute world coords — lets tests inspect deep areas (biomes, arena) without a scripted multi-minute descent. */
+    teleport(x: number, y: number): void;
     input: InputController;
   }
   (window as unknown as { __wickDebug: WickDebug }).__wickDebug = {
@@ -246,6 +248,9 @@ async function main(): Promise<void> {
     },
     addEssence: (amount) => {
       runEssence += amount;
+    },
+    teleport: (x, y) => {
+      player.respawn(x, y);
     },
     input,
   };

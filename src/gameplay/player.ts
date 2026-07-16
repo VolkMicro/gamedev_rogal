@@ -103,19 +103,31 @@ export class Player {
     if (this.dead) return;
     if (this.invulnTimer > 0) this.invulnTimer -= dt;
 
+    // Swimming: submerged movement is floaty — weak gravity, hard sink-speed
+    // cap, and the jump input becomes a swim stroke usable ANY time (not
+    // just grounded), so water is traversable up as well as down. The
+    // Flooded Caverns biome is built around this.
+    const inWater = world.get(Math.floor(this.x), Math.floor(this.y)) === Material.Water;
+
     if (this.knockbackTimer > 0) {
       this.knockbackTimer -= dt;
     } else if (moveX !== 0) {
-      this.vx += moveX * MOVE_ACCEL * dt;
-      this.vx = Math.max(-MAX_MOVE_SPEED, Math.min(MAX_MOVE_SPEED, this.vx));
+      this.vx += moveX * MOVE_ACCEL * (inWater ? 0.7 : 1) * dt;
+      const cap = inWater ? MAX_MOVE_SPEED * 0.75 : MAX_MOVE_SPEED;
+      this.vx = Math.max(-cap, Math.min(cap, this.vx));
     } else if (this.vx !== 0) {
       const decel = FRICTION * dt;
       this.vx = Math.abs(this.vx) <= decel ? 0 : this.vx - Math.sign(this.vx) * decel;
     }
 
-    this.vy = Math.min(this.vy + GRAVITY * dt, MAX_FALL_SPEED);
-    if (jumpPressed && this.grounded) {
-      this.vy = JUMP_VELOCITY;
+    if (inWater) {
+      this.vy = Math.min(this.vy + GRAVITY * 0.3 * dt, MAX_FALL_SPEED * 0.22);
+      if (jumpPressed) this.vy = JUMP_VELOCITY * 0.55;
+    } else {
+      this.vy = Math.min(this.vy + GRAVITY * dt, MAX_FALL_SPEED);
+      if (jumpPressed && this.grounded) {
+        this.vy = JUMP_VELOCITY;
+      }
     }
 
     const fallSpeedBefore = this.vy;

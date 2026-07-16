@@ -23,24 +23,31 @@ function mulberry32(seed: number): () => number {
 const SAFE_ZONE_DEPTH = 130;
 
 /**
- * Soft difficulty curve by depth: only one biome/terrain-set exists so far
- * (the GDD's other three biomes are a separate, later content pass), but the
- * enemy roster is complete — so variety and danger still ramp up the deeper
- * you go, just within the same Mines shaft rather than distinct biomes.
- * essenceKeeper is a mini-boss per the GDD and stays rare even at max depth.
+ * Fraction of world height where the Mines give way to the Flooded Caverns
+ * (GDD biome #2). Exported for the renderer, which shifts the stone palette
+ * below this line so the biome change is visible, not just statistical.
  */
-const DEPTH_BANDS: Array<{ minDepth: number; kinds: EnemyKind[] }> = [
-  { minDepth: SAFE_ZONE_DEPTH, kinds: ['mole', 'beetle', 'collapser'] },
-  { minDepth: 280, kinds: ['mole', 'beetle', 'collapser', 'sulfurTick', 'acidSlime'] },
-  { minDepth: 430, kinds: ['acidSlime', 'leech', 'drowned', 'fireImp', 'heatedGuardian', 'sulfurTick'] },
-  { minDepth: 560, kinds: ['drowned', 'fireImp', 'heatedGuardian', 'whisperOfDarkness', 'ashHound', 'ashHound', 'essenceKeeper'] },
-];
+export const FLOODED_START_FRACTION = 0.45;
 
-function pickEnemyKind(rand: () => number, depth: number): EnemyKind {
-  let pool = DEPTH_BANDS[0].kinds;
-  for (const band of DEPTH_BANDS) {
-    if (depth >= band.minDepth) pool = band.kinds;
-  }
+/**
+ * Per-biome enemy pools (GDD §5): the Mines get the burrowers/vermin, the
+ * Flooded Caverns get the swimmers/drowned — plus a "near boss" band at the
+ * very bottom that mixes in fire-flavored kinds as a teaser of the Molten
+ * Depths biome below (not built yet). essenceKeeper is a mini-boss per the
+ * GDD and stays rare even where it appears.
+ */
+const MINES_POOL: EnemyKind[] = ['mole', 'beetle', 'collapser', 'sulfurTick'];
+const MINES_DEEP_POOL: EnemyKind[] = ['mole', 'beetle', 'collapser', 'sulfurTick', 'acidSlime'];
+const FLOODED_POOL: EnemyKind[] = ['leech', 'leech', 'drowned', 'acidSlime', 'whisperOfDarkness', 'essenceKeeper'];
+const NEAR_BOSS_POOL: EnemyKind[] = ['drowned', 'fireImp', 'heatedGuardian', 'ashHound', 'ashHound', 'whisperOfDarkness'];
+
+function pickEnemyKind(rand: () => number, depth: number, worldH: number): EnemyKind {
+  const floodedStart = worldH * FLOODED_START_FRACTION;
+  let pool: EnemyKind[];
+  if (depth > worldH * 0.78) pool = NEAR_BOSS_POOL;
+  else if (depth > floodedStart) pool = FLOODED_POOL;
+  else if (depth > 280) pool = MINES_DEEP_POOL;
+  else pool = MINES_POOL;
   return pool[Math.floor(rand() * pool.length)];
 }
 
@@ -146,7 +153,23 @@ export function generateMinesLevel(world: World, seed: number): GeneratedLevel {
     // beam caused in the previous single-shaft generator).
     if (rand() < 0.4 && roomH > 12) hline(roomLeft + 2, roomLeft + roomW - 3, roomTop + 4, Material.Wood);
 
-    if (rand() < 0.3 && roomH > 22) {
+    const flooded = roomTop > h * FLOODED_START_FRACTION;
+    if (flooded && roomH > 24) {
+      // Flooded Caverns identity: most rooms are partially UNDER WATER — a
+      // real waterline filling the room's lower half, not a decorative
+      // puddle. This is what makes the water-based combat interactions
+      // (chain lightning arcing through pools, Ice Shard bridging) the
+      // biome's core tools rather than occasional curiosities.
+      const waterH = Math.floor(roomH * (0.3 + rand() * 0.2));
+      fillRect(roomLeft, roomTop + roomH - waterH, roomW, waterH, Material.Water);
+      // Acid fungus pockets (GDD: "кислотные грибницы") — small corrosive
+      // pools sitting on the room floor, eating slowly into it.
+      if (rand() < 0.35) {
+        const acidW = randRange(rand, 6, 12);
+        const acidLeft = roomLeft + 6 + Math.floor(rand() * Math.max(1, roomW - acidW - 12));
+        fillRect(acidLeft, roomTop + roomH - waterH - 3, acidW, 3, Material.Acid);
+      }
+    } else if (rand() < 0.3 && roomH > 22) {
       const poolW = Math.floor(roomW * (0.22 + rand() * 0.22));
       const poolH = randRange(rand, 5, 9);
       const poolLeft = roomLeft + 6 + Math.floor(rand() * Math.max(1, roomW - poolW - 12));
@@ -168,7 +191,7 @@ export function generateMinesLevel(world: World, seed: number): GeneratedLevel {
     const spotX = roomLeft + roomW * (0.25 + rand() * 0.5);
 
     if (rand() < enemyChance && depth > SAFE_ZONE_DEPTH) {
-      const kind = pickEnemyKind(rand, depth);
+      const kind = pickEnemyKind(rand, depth, h);
       enemySpawns.push({ x: spotX, y: floorY, kind });
       // Ash hounds hunt in packs per the GDD — a second one spawns nearby.
       if (kind === 'ashHound' && rand() < 0.7) {
@@ -232,9 +255,10 @@ export function generateMinesLevel(world: World, seed: number): GeneratedLevel {
     // already freezes Water (see World's ice/water handling); it just never
     // mattered in an actual encounter before. Skipped on floor 0, which
     // already has its own dedicated sand-dig/water-drain opening beat.
-    if (floorIndex > 0 && rand() < 0.32 && hallW > 40) {
-      const gapW = randRange(rand, 12, 16);
-      const pitDepth = randRange(rand, 20, 30);
+    const floodedHall = roomTop > h * FLOODED_START_FRACTION;
+    if (floorIndex > 0 && rand() < (floodedHall ? 0.65 : 0.32) && hallW > 40) {
+      const gapW = floodedHall ? randRange(rand, 16, 24) : randRange(rand, 12, 16);
+      const pitDepth = floodedHall ? randRange(rand, 28, 40) : randRange(rand, 20, 30);
       const gapLeft = hallLeft + 14 + Math.floor(rand() * Math.max(1, hallW - gapW - 28));
       carveRect(gapLeft, hallTop, gapW, hallH + pitDepth);
       fillRect(gapLeft, hallTop + hallH, gapW, pitDepth, Material.Water);
@@ -261,7 +285,7 @@ export function generateMinesLevel(world: World, seed: number): GeneratedLevel {
         essenceSpawns.push({ x: spurX, y: vaultTop + vaultH - 6 });
         essenceSpawns.push({ x: spurX - 8, y: vaultTop + vaultH - 6 });
         if (rand() < 0.45 && depth > SAFE_ZONE_DEPTH) {
-          enemySpawns.push({ x: spurX, y: vaultTop + vaultH - 6, kind: pickEnemyKind(rand, depth) });
+          enemySpawns.push({ x: spurX, y: vaultTop + vaultH - 6, kind: pickEnemyKind(rand, depth, h) });
         }
       }
     }

@@ -8,6 +8,7 @@ interface TelegramWebApp {
   /** Bot API 8.0+. In fullscreen the WebView can actually rotate, making lockOrientation effective. */
   requestFullscreen?(): void;
   isVersionAtLeast?(version: string): boolean;
+  openTelegramLink?(url: string): void;
   HapticFeedback?: {
     impactOccurred(style: 'light' | 'medium' | 'heavy' | 'rigid' | 'soft'): void;
   };
@@ -55,4 +56,20 @@ export function initTelegram(): void {
 
 export function haptic(style: 'light' | 'medium' | 'heavy' | 'rigid' | 'soft' = 'light'): void {
   window.Telegram?.WebApp.HapticFeedback?.impactOccurred(style);
+}
+
+const GAME_LINK = 'https://t.me/WickGameBot_bot';
+
+/**
+ * Opens Telegram's share sheet pre-filled with `text` + the game link — the
+ * shareable-moment hook from the design council plan. Static-hosting
+ * friendly: a t.me/share link needs no bot server, unlike shareMessage()
+ * (which requires server-side prepared messages). Falls back to a plain
+ * window.open outside Telegram.
+ */
+export function shareText(text: string): void {
+  const url = `https://t.me/share/url?url=${encodeURIComponent(GAME_LINK)}&text=${encodeURIComponent(text)}`;
+  const webApp = window.Telegram?.WebApp;
+  if (webApp?.openTelegramLink) webApp.openTelegramLink(url);
+  else window.open(url, '_blank');
 }
