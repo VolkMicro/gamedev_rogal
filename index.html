@@ -61,6 +61,22 @@
          (a dead end — the old #rotate-prompt overlay), src/orientation.ts
          rotates the whole page 90° via a transform on <body> whenever the
          viewport is portrait ("fake landscape"). */
+      /* Campfire glow behind the camp hub — see src/meta/camp.ts. */
+      @keyframes campfire-flicker {
+        0%,
+        100% {
+          opacity: 0.5;
+          transform: translateX(-50%) scale(1);
+        }
+        45% {
+          opacity: 0.72;
+          transform: translateX(-50%) scale(1.06);
+        }
+        70% {
+          opacity: 0.58;
+          transform: translateX(-50%) scale(0.97);
+        }
+      }
     </style>
   </head>
   <body>

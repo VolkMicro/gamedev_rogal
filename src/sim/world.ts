@@ -255,9 +255,14 @@ export class World {
     }
   }
 
-  /** Ice is a temporary platform (Ice Shard spell freezing Water) that melts back to Water once its aux countdown runs out. */
+  /** Ice is a temporary platform (Ice Shard spell freezing Water) that melts back to Water once its aux countdown runs out — or instantly on contact with Fire/Lava (heatedGuardian's floor-ignite can melt your bridge out from under you). */
   private updateIce(x: number, y: number): void {
     const i = this.idx(x, y);
+    const hot = (m: Material): boolean => m === Material.Fire || m === Material.Lava;
+    if (hot(this.get(x + 1, y)) || hot(this.get(x - 1, y)) || hot(this.get(x, y + 1)) || hot(this.get(x, y - 1))) {
+      this.set(x, y, Material.Water);
+      return;
+    }
     const life = this.aux[i] - 1;
     if (life <= 0) {
       this.set(x, y, Material.Water);
@@ -316,6 +321,17 @@ export class World {
 
   private updateFire(x: number, y: number): void {
     const i = this.idx(x, y);
+    // Water douses fire on contact — makes splashing a burning floor (or a
+    // burning YOU) an actual tactic instead of waiting out the burn timer.
+    if (
+      this.get(x + 1, y) === Material.Water ||
+      this.get(x - 1, y) === Material.Water ||
+      this.get(x, y + 1) === Material.Water ||
+      this.get(x, y - 1) === Material.Water
+    ) {
+      this.set(x, y, Material.Empty);
+      return;
+    }
     const life = this.aux[i] - 1;
     if (life <= 0) {
       this.material[i] = Material.Empty;

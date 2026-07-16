@@ -18,6 +18,7 @@ import { Hud } from './gameplay/hud';
 import { loadSave, persistSave, ALL_SPELLS } from './meta/save';
 import { LORE_FRAGMENTS } from './meta/lore';
 import { UpgradeChoice } from './gameplay/upgradeChoice';
+import { RunSummary, type RunStats } from './gameplay/runSummary';
 import type { SpellId } from './gameplay/projectile';
 import { Camp } from './meta/camp';
 import { loadSprites } from './render/sprites';
@@ -108,6 +109,13 @@ async function main(): Promise<void> {
   let currentLevel: GeneratedLevel | null = null;
   let upgradesTaken = 0;
   const upgradeChoice = new UpgradeChoice();
+  const runSummary = new RunSummary();
+  // Death/victory beat: instead of hard-cutting to camp, the sim runs in
+  // slow motion for a moment (the "death frame" the design council's feel
+  // pass called for), then the run-summary overlay takes over.
+  let endingOutcome: 'death' | 'victory' | null = null;
+  let endingTimer = 0;
+  const runStats: RunStats = { essence: 0, kills: 0, depthPx: 0, seconds: 0 };
 
   const camp = new Camp(save, () => {
     wand = new Wand(save.wandLoadout);
@@ -135,6 +143,13 @@ async function main(): Promise<void> {
     runEssence = 0;
     upgradesTaken = 0;
     upgradeChoice.hide();
+    runSummary.hide();
+    endingOutcome = null;
+    endingTimer = 0;
+    runStats.essence = 0;
+    runStats.kills = 0;
+    runStats.depthPx = 0;
+    runStats.seconds = 0;
 
     world = new World(WORLD_WIDTH, WORLD_HEIGHT);
     const level = generateMinesLevel(world, seed);
@@ -170,8 +185,11 @@ async function main(): Promise<void> {
     else save.runsCompleted += 1;
     persistSave(save);
     runSeed += 1;
-    clearRunObjects();
-    camp.show();
+    runStats.essence = runEssence;
+    runSummary.show(outcome, runStats, () => {
+      clearRunObjects();
+      camp.show();
+    });
   }
 
   // Dev/test-only introspection hook — lets an external Playwright bot drive
@@ -248,7 +266,24 @@ async function main(): Promise<void> {
     // particles, which use realDtSec directly) — the classic "impact frame"
     // that makes a hit read as landing instead of just a number changing.
     if (hitStopTimer > 0) hitStopTimer = Math.max(0, hitStopTimer - realDtSec);
-    const dtSec = hitStopTimer > 0 ? 0 : realDtSec;
+    let dtSec = hitStopTimer > 0 ? 0 : realDtSec;
+
+    // Death/victory slow-motion beat: the world keeps simulating at quarter
+    // speed for a moment so the killing blow / boss collapse is legible,
+    // then the summary takes over.
+    if (endingOutcome !== null) {
+      dtSec *= 0.25;
+      endingTimer -= realDtSec;
+      if (endingTimer <= 0) {
+        const outcome = endingOutcome;
+        endingOutcome = null;
+        endRun(outcome);
+        return;
+      }
+    } else {
+      runStats.seconds += dtSec;
+      runStats.depthPx = Math.max(runStats.depthPx, player.y - (currentLevel?.spawnY ?? 0));
+    }
 
     wand.tick(dtSec);
     player.update(dtSec, input.moveX, input.consumeJump(), world, input.aiming ? input.aimX : null);
@@ -297,6 +332,7 @@ async function main(): Promise<void> {
       }
       if (enemy.justDied) {
         enemy.justDied = false;
+        runStats.kills++;
         fx.burst(enemy.x, enemy.y, 0xffffff, isBoss ? 26 : 14, isBoss ? 90 : 65, isBoss ? 0.5 : 0.32);
         stage.addShake(isBoss ? 4 : 2.2, isBoss ? 0.22 : 0.13);
         hitStopTimer = Math.max(hitStopTimer, isBoss ? 0.12 : 0.08);
@@ -424,11 +460,16 @@ async function main(): Promise<void> {
     hud.update(player.hp, player.maxHp, runEssence, bossEngaged ? { hp: boss!.hp, maxHp: boss!.maxHp } : null);
     stats.frame(dtMs, world.activeChunkCount(), world.totalChunkCount());
 
-    if (player.dead) {
-      endRun('death');
-    } else if (boss && boss.dead) {
-      runEssence += 25; // boss kill bonus
-      endRun('victory');
+    if (endingOutcome === null) {
+      if (player.dead) {
+        endingOutcome = 'death';
+        endingTimer = 1.1;
+        stage.addShake(3, 0.3);
+      } else if (boss && boss.dead) {
+        runEssence += 25; // boss kill bonus
+        endingOutcome = 'victory';
+        endingTimer = 1.1;
+      }
     }
   });
 }

@@ -23,6 +23,7 @@ import { SPELL_LABELS, type SpellId } from '../gameplay/projectile';
  */
 export class Camp {
   private el: HTMLDivElement;
+  private glow: HTMLDivElement;
   private save: SaveState;
   private onStartRun: () => void;
   private showCatalogue = false;
@@ -47,6 +48,22 @@ export class Camp {
       flexDirection: 'column',
     } satisfies Partial<CSSStyleDeclaration>);
     document.body.appendChild(this.el);
+
+    // Campfire glow: a soft flickering warm light rising from the bottom of
+    // the screen (behind the stalls) — the cheapest possible "this is a
+    // place, not a menu" cue from the design council's camp feel pass.
+    this.glow = document.createElement('div');
+    Object.assign(this.glow.style, {
+      position: 'absolute',
+      bottom: '-30%',
+      left: '50%',
+      transform: 'translateX(-50%)',
+      width: '80%',
+      height: '70%',
+      background: 'radial-gradient(ellipse at center, rgba(255, 140, 50, 0.28) 0%, rgba(255, 100, 30, 0.1) 45%, transparent 70%)',
+      pointerEvents: 'none',
+      animation: 'campfire-flicker 2.8s ease-in-out infinite',
+    } satisfies Partial<CSSStyleDeclaration>);
     this.render();
   }
 
@@ -84,6 +101,9 @@ export class Camp {
 
   private render(): void {
     this.el.innerHTML = '';
+    // Glow first so everything else stacks above it (render() clears the
+    // whole element, including the glow, each time).
+    this.el.appendChild(this.glow);
     if (this.showCatalogue) {
       this.renderCatalogue();
       return;

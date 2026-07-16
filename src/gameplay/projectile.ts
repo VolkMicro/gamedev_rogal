@@ -614,12 +614,22 @@ export class Projectile {
     }
 
     if (r > 0) {
+      const innerR2 = r * r * 0.55;
       for (let dy = -r; dy <= r; dy++) {
         for (let dx = -r; dx <= r; dx++) {
-          if (dx * dx + dy * dy > r * r) continue;
+          const d2 = dx * dx + dy * dy;
+          if (d2 > r * r) continue;
           const mat = world.get(cx + dx, cy + dy);
           if (mat === Material.Stone || mat === Material.Wood || mat === Material.Sand) {
-            world.set(cx + dx, cy + dy, Material.Empty);
+            // Wood near the crater's EDGE ignites instead of vaporizing —
+            // explosions start real fires that spread through wooden
+            // structures (beams, ledges), an emergent-chaos payoff for the
+            // sim instead of a sterile circular hole.
+            if (mat === Material.Wood && d2 > innerR2) {
+              world.set(cx + dx, cy + dy, Material.Fire, 70);
+            } else {
+              world.set(cx + dx, cy + dy, Material.Empty);
+            }
           }
         }
       }
