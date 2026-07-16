@@ -1,9 +1,14 @@
 import { Sprite } from 'pixi.js';
 import { Material } from '../sim/materials';
 import type { World } from '../sim/world';
-import { playerTexture } from '../render/sprites';
+import { playerAnimTexture, PLAYER_ANIM_FRAMES, type PlayerAnim } from '../render/sprites';
 
-const WALK_FRAME_INTERVAL = 0.18;
+/** Rogue sheet frames are 32px; the character reads right at ~16px world size next to the 8x14 hitbox. */
+const PLAYER_SPRITE_SCALE = 0.5;
+const IDLE_FPS = 8;
+const WALK_FPS = 14;
+const DEATH_FPS = 11;
+const ATTACK_FLASH = 0.12;
 
 const MOVE_ACCEL = 260;
 const MAX_MOVE_SPEED = 55;
@@ -22,7 +27,6 @@ const KNOCKBACK_SPEED = 90;
 const KNOCKBACK_POP = 40;
 const KNOCKBACK_DURATION = 0.22;
 
-/** Placeholder box character (real sprite arrives with art in a later stage). */
 export class Player {
   x: number;
   y: number;
@@ -34,13 +38,15 @@ export class Player {
   private grounded = false;
   private invulnTimer = 0;
   private fireResist = 0;
-  private walkTimer = 0;
-  private legsApart = false;
   private facing = 1;
   private knockbackTimer = 0;
   private squashTimer = 0;
   private recoilTimer = 0;
   private recoilDir = 1;
+  private attackFlashTimer = 0;
+  private anim: PlayerAnim = 'idle';
+  private animFrame = 0;
+  private animTimer = 0;
   /** Set for exactly one frame whenever damage actually lands (not absorbed by invuln). main.ts reads and clears it to drive hit-feedback (shake/flash). */
   justHit = false;
   readonly sprite: Sprite;
@@ -48,8 +54,11 @@ export class Player {
   constructor(spawnX: number, spawnY: number) {
     this.x = spawnX;
     this.y = spawnY;
-    this.sprite = new Sprite(playerTexture(false));
-    this.sprite.anchor.set(0.5, 0.5);
+    this.sprite = new Sprite(playerAnimTexture('idle', 0));
+    // Feet-anchored: the rogue's soles sit at row ~30 of the 32px cell, so
+    // anchoring there and positioning at hitbox-bottom keeps the feet ON
+    // the ground instead of hovering half a body above it.
+    this.sprite.anchor.set(0.5, 30 / 32);
   }
 
   debugPhysics(): { vx: number; vy: number; grounded: boolean; knockbackTimer: number; facing: number } {
@@ -71,6 +80,7 @@ export class Player {
     this.dead = false;
     this.invulnTimer = 0;
     this.knockbackTimer = 0;
+    this.setAnim('idle');
   }
 
   takeDamage(amount: number): void {
@@ -81,10 +91,19 @@ export class Player {
     if (this.hp <= 0) this.dead = true;
   }
 
-  /** Brief visual kickback opposite the cast direction — called by main.ts on every successful cast. */
+  /** Brief visual kickback + attack-frame flash opposite the cast direction — called by main.ts on every successful cast. */
   castKick(dirX: number): void {
     this.recoilTimer = 0.08;
     this.recoilDir = dirX >= 0 ? 1 : -1;
+    this.attackFlashTimer = ATTACK_FLASH;
+  }
+
+  /** Switches the animation row, resetting frame progress only on a real change so cycles don't stutter. */
+  private setAnim(anim: PlayerAnim): void {
+    if (this.anim === anim) return;
+    this.anim = anim;
+    this.animFrame = 0;
+    this.animTimer = 0;
   }
 
   /** Shoves the player away from a hit source so contact damage can't glue them in place. */
@@ -100,7 +119,21 @@ export class Player {
   }
 
   update(dt: number, moveX: number, jumpPressed: boolean, world: World, aimX: number | null = null): void {
-    if (this.dead) return;
+    if (this.dead) {
+      // Death is animated, not a freeze-frame: the rogue visibly crumples
+      // during main.ts's slow-motion ending beat (holds the final heap frame).
+      this.setAnim('death');
+      this.animTimer += dt;
+      if (this.animTimer >= 1 / DEATH_FPS && this.animFrame < PLAYER_ANIM_FRAMES - 1) {
+        this.animTimer = 0;
+        this.animFrame++;
+      }
+      this.sprite.texture = playerAnimTexture('death', this.animFrame);
+      this.sprite.scale.set(this.facing * PLAYER_SPRITE_SCALE, PLAYER_SPRITE_SCALE);
+      this.sprite.x = this.x;
+      this.sprite.y = this.y + PLAYER_HALF_HEIGHT;
+      return;
+    }
     if (this.invulnTimer > 0) this.invulnTimer -= dt;
 
     // Swimming: submerged movement is floaty — weak gravity, hard sink-speed
@@ -150,24 +183,37 @@ export class Player {
       this.facing = moveX > 0 ? 1 : -1;
     }
 
-    // Walk cycle only when actually walking under player input — a
-    // knockback slide with pumping legs read as broken.
+    // Animation state machine on the rogue sheet's real frame rows — walk
+    // cycle only under actual player input (a knockback slide with pumping
+    // legs read as broken); attack flash overrides briefly on each cast;
+    // airborne freezes a mid-stride walk frame as the jump pose.
     const walking = this.grounded && moveX !== 0 && this.knockbackTimer <= 0;
-    if (walking) {
-      this.walkTimer += dt;
-      if (this.walkTimer >= WALK_FRAME_INTERVAL) {
-        this.walkTimer = 0;
-        this.legsApart = !this.legsApart;
-        this.sprite.texture = playerTexture(this.legsApart);
+    if (this.attackFlashTimer > 0) {
+      this.attackFlashTimer = Math.max(0, this.attackFlashTimer - dt);
+      this.setAnim('attack');
+      this.animFrame = 4;
+    } else if (!this.grounded) {
+      this.setAnim('walk');
+      this.animFrame = 3;
+    } else if (walking) {
+      this.setAnim('walk');
+      this.animTimer += dt;
+      if (this.animTimer >= 1 / WALK_FPS) {
+        this.animTimer = 0;
+        this.animFrame = (this.animFrame + 1) % PLAYER_ANIM_FRAMES;
       }
-    } else if (this.legsApart) {
-      this.legsApart = false;
-      this.sprite.texture = playerTexture(false);
+    } else {
+      this.setAnim('idle');
+      this.animTimer += dt;
+      if (this.animTimer >= 1 / IDLE_FPS) {
+        this.animTimer = 0;
+        this.animFrame = (this.animFrame + 1) % PLAYER_ANIM_FRAMES;
+      }
     }
+    this.sprite.texture = playerAnimTexture(this.anim, this.animFrame);
 
-    // Pose layer, all pure scale/offset trickery on the existing sprite (no
-    // extra art): landing squash, airborne stretch (rising) / lean (falling),
-    // and a 1-2px cast-recoil kick opposite the shot.
+    // Pose layer on top of the frame animation: landing squash, airborne
+    // stretch (rising) / lean (falling), and a cast-recoil kick.
     if (this.squashTimer > 0) this.squashTimer = Math.max(0, this.squashTimer - dt);
     if (this.recoilTimer > 0) this.recoilTimer = Math.max(0, this.recoilTimer - dt);
     const squash = this.squashTimer / 0.14;
@@ -182,9 +228,10 @@ export class Player {
         sx *= 0.95;
       }
     }
-    this.sprite.scale.set(this.facing * sx, sy);
+    this.sprite.scale.set(this.facing * sx * PLAYER_SPRITE_SCALE, sy * PLAYER_SPRITE_SCALE);
     this.sprite.x = this.x + (this.recoilTimer > 0 ? -this.recoilDir * 1.5 : 0);
-    this.sprite.y = this.y;
+    // Feet-anchored sprite sits at the hitbox's bottom edge.
+    this.sprite.y = this.y + PLAYER_HALF_HEIGHT;
 
     if (world.get(Math.floor(this.x), Math.floor(this.y)) === Material.Fire) {
       this.hp = Math.max(0, this.hp - FIRE_DPS * (1 - this.fireResist) * dt);

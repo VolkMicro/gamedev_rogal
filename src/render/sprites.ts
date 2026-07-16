@@ -14,8 +14,11 @@ import { Assets, Rectangle, Texture } from 'pixi.js';
 // HTML/CSS asset references are, so this has to be applied by hand or the built site 404s.
 const BASE = import.meta.env.BASE_URL;
 const SHEET_PATHS = {
-  player0: `${BASE}dawnlike/Characters/Player0.png`,
-  player1: `${BASE}dawnlike/Characters/Player1.png`,
+  // Player: Calciumtrice's "Animated Rogue" (opengameart.org, CC-BY 3.0) —
+  // a hooded 32x32 character with REAL frame animation (10-frame idle/walk/
+  // attack/death rows), replacing the 2-frame DawnLike player cell that
+  // never read as alive. Enemies stay DawnLike.
+  rogue: `${BASE}oga/rogue.png`,
   rodent0: `${BASE}dawnlike/Characters/Rodent0.png`,
   rodent1: `${BASE}dawnlike/Characters/Rodent1.png`,
   pest0: `${BASE}dawnlike/Characters/Pest0.png`,
@@ -52,7 +55,6 @@ export type EnemySpriteKind =
   | 'essenceKeeper'
   | 'boss';
 
-const PLAYER_CELL: [number, number] = [2, 4];
 const ENEMY_CELLS: Record<EnemySpriteKind, [number, number]> = {
   mole: [2, 2],
   beetle: [0, 10],
@@ -110,9 +112,30 @@ function crop(sheetKey: SheetKey, col: number, row: number): Texture {
   return tex;
 }
 
-export function playerTexture(walkFrame: boolean): Texture {
-  const [col, row] = PLAYER_CELL;
-  return crop(walkFrame ? 'player1' : 'player0', col, row);
+export type PlayerAnim = 'idle' | 'walk' | 'attack' | 'death';
+
+/**
+ * Rogue sheet rows, verified by rendering the sheet with a labeled grid
+ * overlay (established verify-before-trust practice): 0 = idle breathing,
+ * 2 = walk cycle (cape flowing), 3 = dagger attack, 4 = crumple death.
+ * Rows 5-9 are a recolored variant; unused. All rows are 10 frames of
+ * 32x32.
+ */
+const PLAYER_ANIM_ROWS: Record<PlayerAnim, number> = { idle: 0, walk: 2, attack: 3, death: 4 };
+export const PLAYER_ANIM_FRAMES = 10;
+const PLAYER_TILE = 32;
+
+export function playerAnimTexture(anim: PlayerAnim, frame: number): Texture {
+  if (!sheets) throw new Error('loadSprites() must resolve before requesting sprite textures');
+  const f = Math.max(0, Math.min(PLAYER_ANIM_FRAMES - 1, frame | 0));
+  const row = PLAYER_ANIM_ROWS[anim];
+  const key = `rogue:${anim}:${f}`;
+  let tex = cropCache.get(key);
+  if (!tex) {
+    tex = new Texture({ source: sheets.rogue.source, frame: new Rectangle(f * PLAYER_TILE, row * PLAYER_TILE, PLAYER_TILE, PLAYER_TILE) });
+    cropCache.set(key, tex);
+  }
+  return tex;
 }
 
 export function enemyTexture(kind: EnemySpriteKind, frame: 0 | 1 = 0): Texture {

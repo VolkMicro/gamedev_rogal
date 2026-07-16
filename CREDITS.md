@@ -2,9 +2,18 @@
 
 Third-party assets used in «Фитиль» (Wick), with license notes.
 
+## Animated Rogue (player character)
+
+The player character (`public/oga/rogue.png` — 10-frame idle/walk/attack/
+death animation rows) is **"Animated Rogue"** by Calciumtrice.
+
+- Source: https://opengameart.org/content/animated-rogue
+- License: **CC-BY 3.0** — https://creativecommons.org/licenses/by/3.0/
+- Attribution: art by Calciumtrice.
+
 ## DawnLike — 16x16 Universal Rogue-like Tileset
 
-Player and enemy sprites (`public/dawnlike/Characters/`) are cropped from
+Enemy sprites (`public/dawnlike/Characters/`) are cropped from
 **DawnLike** by DragonDePlatino.
 
 - Source: https://opengameart.org/content/dawnlike-16x16-universal-rogue-like-tileset-v181
