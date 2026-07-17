@@ -28,7 +28,10 @@ const ESSENCE_STEAL_AMOUNT = 3;
 const BOSS_ENGAGE_RANGE = 260;
 
 const WORLD_WIDTH = 640;
-const WORLD_HEIGHT = 980;
+// Tall enough that all four GDD biomes get real estate: Mines (0-45%),
+// Flooded Caverns (45-72%), Molten Depths (72-85%), Heart of the Mountain
+// (arena zone, 85%+).
+const WORLD_HEIGHT = 1200;
 const SIM_HZ = 60;
 const SIM_DT_MS = 1000 / SIM_HZ;
 

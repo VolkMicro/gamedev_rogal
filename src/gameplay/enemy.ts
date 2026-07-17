@@ -351,7 +351,7 @@ export class Enemy {
     }
     this.facing = dx >= 0 ? 1 : -1;
     this.attackTimer -= dt;
-    if (this.attackTimer <= 0 && dist > 1) {
+    if (this.attackTimer <= 0 && dist > 1 && world.hasLineOfSight(this.x, this.y, this.x + dx, this.y + dy)) {
       this.attackTimer = 2.2 + Math.random() * 1;
       this.pendingAttack = { dx: dx / dist, dy: dy / dist };
     }
@@ -424,7 +424,7 @@ export class Enemy {
     }
     this.facing = dx >= 0 ? 1 : -1;
     this.attackTimer -= dt;
-    if (this.attackTimer <= 0 && dist > 1 && dist < 200) {
+    if (this.attackTimer <= 0 && dist > 1 && dist < 200 && world.hasLineOfSight(this.x, this.y, player.x, player.y)) {
       this.attackTimer = 1.8 + Math.random() * 0.8;
       this.pendingAttack = { dx: dx / dist, dy: dy / dist };
     }
@@ -496,8 +496,9 @@ export class Enemy {
       // was the real reason the boss felt "unkillable": chip damage from
       // this alone could exceed the player's max HP over one fight. Now it's
       // a real telegraphed AoE — stepping away from the marked spot in the
-      // ~0.6s warning window avoids it entirely.
-      if (distToPlayer < BOSS_AGGRO_RANGE) {
+      // ~0.6s warning window avoids it entirely. LOS-gated: rocks don't fall
+      // on a player the boss can't actually see through solid rock.
+      if (distToPlayer < BOSS_AGGRO_RANGE && world.hasLineOfSight(this.x, this.y, player.x, player.y)) {
         this.slamTelegraphTimer = 0.6;
         this.slamTargetX = player.x;
         this.slamTargetY = player.y;

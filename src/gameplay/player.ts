@@ -233,8 +233,12 @@ export class Player {
     // Feet-anchored sprite sits at the hitbox's bottom edge.
     this.sprite.y = this.y + PLAYER_HALF_HEIGHT;
 
-    if (world.get(Math.floor(this.x), Math.floor(this.y)) === Material.Fire) {
-      this.hp = Math.max(0, this.hp - FIRE_DPS * (1 - this.fireResist) * dt);
+    const standingIn = world.get(Math.floor(this.x), Math.floor(this.y));
+    if (standingIn === Material.Fire || standingIn === Material.Lava) {
+      // Lava burns much harder than open flame — a failed lava-gap jump in
+      // the Molten Depths must be a real cost, but still escapable.
+      const dps = standingIn === Material.Lava ? FIRE_DPS * 2.5 : FIRE_DPS;
+      this.hp = Math.max(0, this.hp - dps * (1 - this.fireResist) * dt);
       if (this.hp <= 0) this.dead = true;
     }
   }

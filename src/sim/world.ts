@@ -88,6 +88,27 @@ export class World {
     return MATERIALS[this.material[this.idx(fx, fy)] as Material].solidForPlayer;
   }
 
+  /**
+   * True if a straight line between the two points crosses no player-solid
+   * cell (endpoints excluded). Used to gate enemy ranged attacks — most
+   * infamously the boss's ground-slam, which used to "hit" the player
+   * through solid rock with no line of sight at all. Simple DDA sampling at
+   * 1px steps; max ranges in this game are a few hundred px, called on
+   * multi-second attack timers, so cost is negligible.
+   */
+  hasLineOfSight(x0: number, y0: number, x1: number, y1: number): boolean {
+    const dx = x1 - x0;
+    const dy = y1 - y0;
+    const dist = Math.hypot(dx, dy);
+    if (dist < 1) return true;
+    const steps = Math.ceil(dist);
+    for (let i = 1; i < steps; i++) {
+      const t = i / steps;
+      if (this.isSolidForPlayer(x0 + dx * t, y0 + dy * t)) return false;
+    }
+    return true;
+  }
+
   private chunkIndex(cx: number, cy: number): number {
     return cy * this.chunksX + cx;
   }

@@ -28,6 +28,10 @@ const SAFE_ZONE_DEPTH = 130;
  * below this line so the biome change is visible, not just statistical.
  */
 export const FLOODED_START_FRACTION = 0.45;
+/** Below this fraction the Flooded Caverns give way to the Molten Depths (GDD biome #3) — lava instead of water, fire-flavored enemies, warm stone. */
+export const MOLTEN_START_FRACTION = 0.72;
+/** The Heart of the Mountain (GDD biome #4) — the final arena zone, violet crystal-veined stone. */
+export const HEART_START_FRACTION = 0.85;
 
 /**
  * Per-biome enemy pools (GDD §5): the Mines get the burrowers/vermin, the
@@ -39,13 +43,12 @@ export const FLOODED_START_FRACTION = 0.45;
 const MINES_POOL: EnemyKind[] = ['mole', 'beetle', 'collapser', 'sulfurTick'];
 const MINES_DEEP_POOL: EnemyKind[] = ['mole', 'beetle', 'collapser', 'sulfurTick', 'acidSlime'];
 const FLOODED_POOL: EnemyKind[] = ['leech', 'leech', 'drowned', 'acidSlime', 'whisperOfDarkness', 'essenceKeeper'];
-const NEAR_BOSS_POOL: EnemyKind[] = ['drowned', 'fireImp', 'heatedGuardian', 'ashHound', 'ashHound', 'whisperOfDarkness'];
+const MOLTEN_POOL: EnemyKind[] = ['fireImp', 'fireImp', 'heatedGuardian', 'ashHound', 'ashHound', 'sulfurTick', 'essenceKeeper'];
 
 function pickEnemyKind(rand: () => number, depth: number, worldH: number): EnemyKind {
-  const floodedStart = worldH * FLOODED_START_FRACTION;
   let pool: EnemyKind[];
-  if (depth > worldH * 0.78) pool = NEAR_BOSS_POOL;
-  else if (depth > floodedStart) pool = FLOODED_POOL;
+  if (depth > worldH * MOLTEN_START_FRACTION) pool = MOLTEN_POOL;
+  else if (depth > worldH * FLOODED_START_FRACTION) pool = FLOODED_POOL;
   else if (depth > 280) pool = MINES_DEEP_POOL;
   else pool = MINES_POOL;
   return pool[Math.floor(rand() * pool.length)];
@@ -153,8 +156,19 @@ export function generateMinesLevel(world: World, seed: number): GeneratedLevel {
     // beam caused in the previous single-shaft generator).
     if (rand() < 0.4 && roomH > 12) hline(roomLeft + 2, roomLeft + roomW - 3, roomTop + 4, Material.Wood);
 
-    const flooded = roomTop > h * FLOODED_START_FRACTION;
-    if (flooded && roomH > 24) {
+    const molten = roomTop > h * MOLTEN_START_FRACTION;
+    const flooded = !molten && roomTop > h * FLOODED_START_FRACTION;
+    if (molten && roomH > 24) {
+      // Molten Depths identity: lava pools sunk into the room floor —
+      // deadly to stand in (existing Lava sim: ignites, flows), and the
+      // water-vs-lava interaction (lava + water → stone) turns any water
+      // brought down from the caverns above into a bridge-making tool.
+      if (rand() < 0.6) {
+        const lavaW = Math.floor(roomW * (0.18 + rand() * 0.2));
+        const lavaLeft = roomLeft + 8 + Math.floor(rand() * Math.max(1, roomW - lavaW - 16));
+        fillRect(lavaLeft, roomTop + roomH - 5, lavaW, 5, Material.Lava);
+      }
+    } else if (flooded && roomH > 24) {
       // Flooded Caverns identity: most rooms are partially UNDER WATER — a
       // real waterline filling the room's lower half, not a decorative
       // puddle. This is what makes the water-based combat interactions
@@ -255,8 +269,19 @@ export function generateMinesLevel(world: World, seed: number): GeneratedLevel {
     // already freezes Water (see World's ice/water handling); it just never
     // mattered in an actual encounter before. Skipped on floor 0, which
     // already has its own dedicated sand-dig/water-drain opening beat.
-    const floodedHall = roomTop > h * FLOODED_START_FRACTION;
-    if (floorIndex > 0 && rand() < (floodedHall ? 0.65 : 0.32) && hallW > 40) {
+    const moltenHall = roomTop > h * MOLTEN_START_FRACTION;
+    const floodedHall = !moltenHall && roomTop > h * FLOODED_START_FRACTION;
+    if (floorIndex > 0 && moltenHall && rand() < 0.5 && hallW > 50) {
+      // Lava gap: narrow enough to clear with a committed running jump, but
+      // falling in HURTS (fire damage) — unlike water pits, the cost of a
+      // failed crossing is real. Kept narrower than water gaps for that
+      // reason, and always jumpable so no loadout is hard-gated.
+      const gapW = randRange(rand, 14, 19);
+      const pitDepth = randRange(rand, 10, 16);
+      const gapLeft = hallLeft + 16 + Math.floor(rand() * Math.max(1, hallW - gapW - 32));
+      carveRect(gapLeft, hallTop, gapW, hallH + pitDepth);
+      fillRect(gapLeft, hallTop + hallH + pitDepth - 4, gapW, 4, Material.Lava);
+    } else if (floorIndex > 0 && rand() < (floodedHall ? 0.65 : 0.32) && hallW > 40) {
       const gapW = floodedHall ? randRange(rand, 16, 24) : randRange(rand, 12, 16);
       const pitDepth = floodedHall ? randRange(rand, 28, 40) : randRange(rand, 20, 30);
       const gapLeft = hallLeft + 14 + Math.floor(rand() * Math.max(1, hallW - gapW - 28));
@@ -326,6 +351,24 @@ export function generateMinesLevel(world: World, seed: number): GeneratedLevel {
   const arenaLeft = arenaCenterX - arenaW / 2;
   carveRect(arenaLeft, arenaTop, arenaW, arenaH);
   hline(arenaLeft - 2, arenaLeft + arenaW + 2, arenaTop + arenaH, Material.Stone);
+
+  // Heart of the Mountain dressing (GDD biome #4): two stone pillars give
+  // the boss fight actual cover play (duck behind one during the slam
+  // telegraph; the boss paces around them instead of beelining), lava
+  // pockets burn at the arena's edges, and essence crystals reward poking
+  // the corners. Pillars stop 26px short of the ceiling so the room stays
+  // fully traversable over the top (BFS-verified like everything else).
+  const pillarH = arenaH - 26;
+  for (const fx of [0.3, 0.7]) {
+    const px = Math.floor(arenaLeft + arenaW * fx);
+    fillRect(px - 3, arenaTop + arenaH - pillarH, 6, pillarH, Material.Stone);
+  }
+  fillRect(arenaLeft + 3, arenaTop + arenaH - 4, 10, 4, Material.Lava);
+  fillRect(arenaLeft + arenaW - 13, arenaTop + arenaH - 4, 10, 4, Material.Lava);
+  essenceSpawns.push({ x: arenaLeft + 18, y: arenaTop + arenaH - 10 });
+  essenceSpawns.push({ x: arenaLeft + arenaW - 18, y: arenaTop + arenaH - 10 });
+  essenceSpawns.push({ x: arenaLeft + arenaW / 2, y: arenaTop + 14 });
+
   const bossSpawn = { x: arenaLeft + arenaW / 2, y: arenaTop + arenaH - 20 };
 
   return { spawnX, spawnY, enemySpawns, essenceSpawns, bossSpawn };
