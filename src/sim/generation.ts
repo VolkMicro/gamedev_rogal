@@ -124,6 +124,86 @@ export function generateMinesLevel(world: World, seed: number): GeneratedLevel {
     for (let px = l; px <= r; px++) world.set(px, y, mat);
   };
 
+  /**
+   * Smooth 1D value noise: random lattice every `wavelength` px, cosine
+   * interpolation between — organic waves, not per-pixel fuzz. Each call
+   * gets its own lattice so no two surfaces share the same wobble.
+   */
+  const makeWave = (amp: number, wavelength: number): ((t: number) => number) => {
+    const pts: number[] = [];
+    return (t: number) => {
+      const i = Math.max(0, Math.floor(t / wavelength));
+      while (pts.length <= i + 1) pts.push(rand() * 2 - 1);
+      const f = t / wavelength - i;
+      const u = (1 - Math.cos(f * Math.PI)) / 2;
+      return Math.round((pts[i] * (1 - u) + pts[i + 1] * u) * amp);
+    };
+  };
+
+  /**
+   * Organic cave carve — the answer to "не бывает рафинированных таких
+   * полов и стен": instead of a clean rectangle, every surface is displaced
+   * by smooth value noise (wavy ceiling ±5, undulating floor ±3 — small
+   * enough that the player's 4px step-up assist walks it — and bowed walls
+   * ±3), then dressed with stalactites, floor-bump stalagmites, and rubble
+   * piles. Two carve passes (column-wise + row-wise) union into a blob that
+   * always CONTAINS the rectangle shrunk by the wave amplitude, so the
+   * connectivity reasoning about rects still holds with a small margin.
+   */
+  const carveCave = (left: number, top: number, width: number, height: number, dress = true): void => {
+    const l = Math.floor(left);
+    const t = Math.floor(top);
+    const ww = Math.max(1, Math.floor(width));
+    const hh = Math.max(1, Math.floor(height));
+    // Wave amplitude scales down with cave height so a wavy ceiling+floor
+    // can never pinch a passage below ~17px (the 14px-tall player + jump
+    // headroom). Full ±5/±3 on proper rooms, near-zero on tight halls.
+    const available = Math.max(0, hh - 17);
+    const ceilAmp = Math.min(5, available);
+    const floorAmp = Math.min(3, Math.max(0, available - ceilAmp));
+    const ceil = makeWave(ceilAmp, 13);
+    const floor = makeWave(floorAmp, 9);
+    const walls = makeWave(3, 11);
+    for (let px = l; px < l + ww; px++) {
+      const cTop = t + Math.abs(ceil(px - l));
+      const fBot = t + hh - Math.abs(floor(px - l));
+      for (let py = cTop; py < fBot; py++) world.set(px, py, Material.Empty);
+    }
+    for (let py = t; py < t + hh; py++) {
+      const shift = walls(py - t);
+      const rowL = l + Math.abs(Math.min(0, shift));
+      const rowR = l + ww - Math.abs(Math.max(0, shift));
+      for (let px = rowL; px < rowR; px++) world.set(px, py, Material.Empty);
+    }
+    if (!dress || hh < 26 || ww < 40) return;
+    // Stalactites: stone teeth hanging from the ceiling, bottoms kept well
+    // above the floor so they read as dressing, never blockers.
+    const stalactites = 1 + Math.floor(ww / 45);
+    for (let i = 0; i < stalactites; i++) {
+      const sx = l + 8 + Math.floor(rand() * Math.max(1, ww - 16));
+      const sLen = 4 + Math.floor(rand() * Math.min(9, hh - 20));
+      for (let dy = 0; dy < sLen; dy++) {
+        const half = Math.max(0, Math.floor(((sLen - dy) / sLen) * 1.6));
+        for (let dx = -half; dx <= half; dx++) world.set(sx + dx, t + 6 + dy, Material.Stone);
+      }
+    }
+    // Stalagmite bumps + a rubble pile on the floor (bump height ≤ 4 so the
+    // step-up assist walks straight over them).
+    const bumps = 1 + Math.floor(ww / 50);
+    for (let i = 0; i < bumps; i++) {
+      const bx = l + 6 + Math.floor(rand() * Math.max(1, ww - 12));
+      const bh = 2 + Math.floor(rand() * 3);
+      for (let dy = 0; dy < bh; dy++) {
+        const half = bh - dy - 1;
+        for (let dx = -half; dx <= half; dx++) world.set(bx + dx, t + hh - 1 - dy, Material.Stone);
+      }
+    }
+    if (rand() < 0.5) {
+      const rx = l + 6 + Math.floor(rand() * Math.max(1, ww - 16));
+      fillRect(rx, t + hh - 2, 4 + Math.floor(rand() * 5), 2, Material.Sand);
+    }
+  };
+
   /** Dogleg vertical→horizontal→vertical connector: handles both a same-side small drift and (in principle) a full side switch without ever needing a diagonal carve. */
   const connect = (x1: number, y1: number, x2: number, y2: number, width: number): void => {
     const midY = y1 + Math.floor((y2 - y1) / 2);
@@ -142,7 +222,7 @@ export function generateMinesLevel(world: World, seed: number): GeneratedLevel {
   // Starting chamber.
   const startW = 44;
   const startH = 26;
-  carveRect(spawnX - startW / 2, spawnY - 8, startW, startH);
+  carveCave(spawnX - startW / 2, spawnY - 8, startW, startH, false);
 
   let prevExitX = spawnX;
   let prevExitY = spawnY - 8 + startH;
@@ -246,8 +326,8 @@ export function generateMinesLevel(world: World, seed: number): GeneratedLevel {
       fillRect(spawnX - poolW / 2, spawnY - 8 + 5, poolW, 5, Material.Water);
     }
 
-    carveRect(leftRoomLeft, roomTop, leftRoomW, floorH);
-    carveRect(rightRoomLeft, roomTop, rightRoomW, floorH);
+    carveCave(leftRoomLeft, roomTop, leftRoomW, floorH);
+    carveCave(rightRoomLeft, roomTop, rightRoomW, floorH);
 
     // Horizontal hallway joining the two rooms, at floor level — this is the
     // traversal the player is actually required to make most floors (see
@@ -257,7 +337,7 @@ export function generateMinesLevel(world: World, seed: number): GeneratedLevel {
     const hallTop = roomTop + floorH - hallH - 4;
     const hallLeft = leftRoomLeft + leftRoomW;
     const hallW = rightRoomLeft - hallLeft;
-    carveRect(hallLeft, hallTop, hallW, hallH);
+    carveCave(hallLeft, hallTop, hallW, hallH, false);
 
     // Water-gap crossing: the hallway floor drops away into a water pit for
     // a short stretch, sized to fit inside one Ice Shard's freeze radius.
@@ -306,7 +386,7 @@ export function generateMinesLevel(world: World, seed: number): GeneratedLevel {
       const vaultTop = roomTop - spurH - vaultH;
       if (vaultTop > 20) {
         carveRect(spurX - 5, vaultTop + vaultH, 10, spurH);
-        carveRect(spurX - vaultW / 2, vaultTop, vaultW, vaultH);
+        carveCave(spurX - vaultW / 2, vaultTop, vaultW, vaultH, false);
         essenceSpawns.push({ x: spurX, y: vaultTop + vaultH - 6 });
         essenceSpawns.push({ x: spurX - 8, y: vaultTop + vaultH - 6 });
         if (rand() < 0.45 && depth > SAFE_ZONE_DEPTH) {
