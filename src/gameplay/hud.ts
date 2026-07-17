@@ -1,3 +1,5 @@
+import { isMuted, setMuted } from '../audio/sfx';
+
 /** DOM-based HUD: HP bar + essence counter + (while fighting it) a boss HP bar. Real art/UI arrives with Kenney assets in a later stage. */
 export class Hud {
   private hpFill: HTMLDivElement;
@@ -87,6 +89,32 @@ export class Hud {
     bossTrack.appendChild(this.bossFill);
     this.bossContainer.appendChild(bossTrack);
     document.body.appendChild(this.bossContainer);
+
+    // Mute toggle — the one interactive HUD element, so it keeps
+    // pointer-events. Parked at the game's top-left past the safe inset
+    // (portrait: right edge, below Telegram's ••• pill), small enough that
+    // aim drags practically never start on it.
+    const muteBtn = document.createElement('button');
+    Object.assign(muteBtn.style, {
+      position: 'fixed',
+      top: '6px',
+      left: 'calc(var(--game-safe-left, 0px) + 6px)',
+      zIndex: '11',
+      width: '30px',
+      height: '30px',
+      background: 'rgba(0,0,0,0.4)',
+      border: '1px solid #555',
+      color: '#ccc',
+      font: '14px monospace',
+      padding: '0',
+      cursor: 'pointer',
+    } satisfies Partial<CSSStyleDeclaration>);
+    muteBtn.textContent = isMuted() ? '🔇' : '🔊';
+    muteBtn.addEventListener('click', () => {
+      setMuted(!isMuted());
+      muteBtn.textContent = isMuted() ? '🔇' : '🔊';
+    });
+    document.body.appendChild(muteBtn);
 
     // Full-screen damage flash — plain DOM overlay (not Pixi) since it must
     // cover the exact screen regardless of camera zoom/shake/letterbox, and

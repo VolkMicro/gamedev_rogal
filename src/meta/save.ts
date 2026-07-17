@@ -1,4 +1,5 @@
 import type { SpellId } from '../gameplay/projectile';
+import { cloudPersist } from '../telegram';
 
 const STORAGE_KEY = 'wick.save.v1';
 const WAND_SLOTS = 4;
@@ -41,11 +42,20 @@ export function loadSave(): SaveState {
 }
 
 export function persistSave(save: SaveState): void {
+  const json = JSON.stringify(save);
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(save));
+    localStorage.setItem(STORAGE_KEY, json);
   } catch {
     // Storage unavailable (private mode, quota) — the run still works, just won't persist.
   }
+  // Mirror to Telegram CloudStorage so progress follows the account across
+  // devices; localStorage stays the synchronous source of truth.
+  cloudPersist(json);
+}
+
+/** Rough progress score for deciding which of two saves (local vs cloud) represents more play. */
+export function saveProgressScore(save: SaveState): number {
+  return save.essenceBanked + save.unlockedSpells.length * 60 + save.runsCompleted * 40 + save.deaths * 10;
 }
 
 /** Full 25-spell roster from GDD §4 — 15 projectiles then 10 modifiers, in the order they're offered for unlock. */

@@ -9,6 +9,11 @@ interface TelegramWebApp {
   requestFullscreen?(): void;
   isVersionAtLeast?(version: string): boolean;
   openTelegramLink?(url: string): void;
+  /** Bot API 6.9+. Key-value storage synced across the user's devices. */
+  CloudStorage?: {
+    setItem(key: string, value: string, callback?: (err: unknown, ok?: boolean) => void): void;
+    getItem(key: string, callback: (err: unknown, value?: string) => void): void;
+  };
   HapticFeedback?: {
     impactOccurred(style: 'light' | 'medium' | 'heavy' | 'rigid' | 'soft'): void;
   };
@@ -59,6 +64,38 @@ export function haptic(style: 'light' | 'medium' | 'heavy' | 'rigid' | 'soft' = 
 }
 
 const GAME_LINK = 'https://t.me/WickGameBot_bot';
+const CLOUD_SAVE_KEY = 'save';
+
+/** True when the running client actually supports CloudStorage (6.9+). Version-gated, not just presence-checked — the telegram-web-app.js shim defines the object on every client but console-errors pre-6.9 (same trap as requestFullscreen). */
+function cloudAvailable(): boolean {
+  const webApp = window.Telegram?.WebApp;
+  return !!webApp?.CloudStorage && webApp.isVersionAtLeast?.('6.9') === true;
+}
+
+/** Fire-and-forget mirror of the save into Telegram CloudStorage (synced across the user's devices). No-op outside Telegram / pre-6.9 clients. */
+export function cloudPersist(json: string): void {
+  if (!cloudAvailable()) return;
+  try {
+    window.Telegram?.WebApp.CloudStorage?.setItem(CLOUD_SAVE_KEY, json, () => {});
+  } catch {
+    // Older client throwing on the shim — localStorage remains the source of truth.
+  }
+}
+
+/** Reads the cloud copy of the save, resolving null when unavailable/absent. */
+export function cloudLoad(): Promise<string | null> {
+  return new Promise((resolve) => {
+    if (!cloudAvailable()) {
+      resolve(null);
+      return;
+    }
+    try {
+      window.Telegram!.WebApp.CloudStorage!.getItem(CLOUD_SAVE_KEY, (err, value) => resolve(err || !value ? null : value));
+    } catch {
+      resolve(null);
+    }
+  });
+}
 
 /**
  * Opens Telegram's share sheet pre-filled with `text` + the game link — the

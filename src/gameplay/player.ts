@@ -233,11 +233,18 @@ export class Player {
     // Feet-anchored sprite sits at the hitbox's bottom edge.
     this.sprite.y = this.y + PLAYER_HALF_HEIGHT;
 
-    const standingIn = world.get(Math.floor(this.x), Math.floor(this.y));
-    if (standingIn === Material.Fire || standingIn === Material.Lava) {
+    // Burn check samples the FEET as well as the body center: floor fires
+    // and lava pools are only a few px deep, so a standing player's center
+    // (7px above the soles) never actually entered them — shallow lava
+    // dealt no damage at all until this sampled where the player touches it.
+    const centerMat = world.get(Math.floor(this.x), Math.floor(this.y));
+    const feetMat = world.get(Math.floor(this.x), Math.floor(this.y + PLAYER_HALF_HEIGHT - 1));
+    const inLava = centerMat === Material.Lava || feetMat === Material.Lava;
+    const inFire = centerMat === Material.Fire || feetMat === Material.Fire;
+    if (inLava || inFire) {
       // Lava burns much harder than open flame — a failed lava-gap jump in
       // the Molten Depths must be a real cost, but still escapable.
-      const dps = standingIn === Material.Lava ? FIRE_DPS * 2.5 : FIRE_DPS;
+      const dps = inLava ? FIRE_DPS * 2.5 : FIRE_DPS;
       this.hp = Math.max(0, this.hp - dps * (1 - this.fireResist) * dt);
       if (this.hp <= 0) this.dead = true;
     }

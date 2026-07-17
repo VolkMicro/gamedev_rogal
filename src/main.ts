@@ -15,10 +15,13 @@ import { Wand } from './gameplay/wand';
 import { InputController } from './gameplay/input';
 import { StatsOverlay } from './perf/statsOverlay';
 import { Hud } from './gameplay/hud';
-import { loadSave, persistSave, ALL_SPELLS } from './meta/save';
+import { loadSave, persistSave, saveProgressScore, ALL_SPELLS, type SaveState } from './meta/save';
+import { cloudLoad } from './telegram';
 import { LORE_FRAGMENTS } from './meta/lore';
 import { UpgradeChoice } from './gameplay/upgradeChoice';
 import { RunSummary, type RunStats } from './gameplay/runSummary';
+import { play } from './audio/sfx';
+import { haptic } from './telegram';
 import type { SpellId } from './gameplay/projectile';
 import { Camp } from './meta/camp';
 import { loadSprites } from './render/sprites';
@@ -128,6 +131,23 @@ async function main(): Promise<void> {
     running = true;
   });
 
+  // Cloud save adoption: if Telegram CloudStorage holds a save with more
+  // progress than this device's localStorage (fresh install, new phone),
+  // adopt it. Runs async after boot; the camp re-renders if it wins.
+  cloudLoad().then((raw) => {
+    if (!raw) return;
+    try {
+      const cloud = { ...loadSave(), ...(JSON.parse(raw) as Partial<SaveState>) };
+      if (saveProgressScore(cloud) > saveProgressScore(save)) {
+        Object.assign(save, cloud);
+        persistSave(save);
+        if (!running) camp.show();
+      }
+    } catch {
+      // Corrupt cloud payload — ignore, local save wins.
+    }
+  });
+
   function clearRunObjects(): void {
     for (const e of enemies) stage.world.removeChild(e.sprite);
     if (boss) stage.world.removeChild(boss.sprite);
@@ -179,6 +199,17 @@ async function main(): Promise<void> {
     });
     boss = new Enemy(level.bossSpawn.x, level.bossSpawn.y, 'boss');
     stage.world.addChild(boss.sprite);
+
+    // First-ever run: two timed hint toasts (movement scheme + the dig-down
+    // goal). Gated on zero recorded play so veterans never see them again.
+    if (save.runsCompleted === 0 && save.deaths === 0) {
+      setTimeout(() => {
+        if (running) hud.showNote('Левый стик — движение (рывок вверх = прыжок). Правый — прицел и огонь.');
+      }, 800);
+      setTimeout(() => {
+        if (running) hud.showNote('Путь только вниз. Песок и камень можно прокапывать выстрелами.');
+      }, 8000);
+    }
   }
 
   function endRun(outcome: 'death' | 'victory'): void {
@@ -313,6 +344,7 @@ async function main(): Promise<void> {
 
         const angle = Math.atan2(input.aimY, input.aimX);
         player.castKick(Math.cos(angle));
+        play('cast');
         const spreadAngles = mods.includes('triple') ? [-0.28, 0, 0.28] : [0];
         for (const spread of spreadAngles) {
           const a = angle + spread;
@@ -334,6 +366,8 @@ async function main(): Promise<void> {
       const isBoss = enemy.kind === 'boss';
       if (enemy.justHit) {
         enemy.justHit = false;
+        play(isBoss ? 'bossHit' : 'hit');
+        haptic('light');
         fx.burst(enemy.x, enemy.y, 0xfff2c0, isBoss ? 8 : 5, isBoss ? 55 : 40, 0.16);
         stage.addShake(isBoss ? 1.8 : 1, 0.07);
         hitStopTimer = Math.max(hitStopTimer, isBoss ? 0.05 : 0.035);
@@ -341,6 +375,8 @@ async function main(): Promise<void> {
       if (enemy.justDied) {
         enemy.justDied = false;
         runStats.kills++;
+        play('kill');
+        haptic('medium');
         fx.burst(enemy.x, enemy.y, 0xffffff, isBoss ? 26 : 14, isBoss ? 90 : 65, isBoss ? 0.5 : 0.32);
         stage.addShake(isBoss ? 4 : 2.2, isBoss ? 0.22 : 0.13);
         hitStopTimer = Math.max(hitStopTimer, isBoss ? 0.12 : 0.08);
@@ -413,8 +449,10 @@ async function main(): Promise<void> {
           save.loreSeen = Math.min(save.loreSeen + 1, LORE_FRAGMENTS.length);
           persistSave(save);
           hud.showNote(fragment);
+          play('lore');
         } else {
           runEssence += 1;
+          play('pickup');
         }
         stage.world.removeChild(pickup.sprite);
       }
@@ -437,6 +475,8 @@ async function main(): Promise<void> {
         options.push(pool.splice(idx, 1)[0]);
       }
       if (options.length > 0) {
+        play('upgrade');
+        haptic('soft');
         upgradeChoice.show(options, (spell) => {
           wand.addRunSlot(spell);
         });
@@ -445,6 +485,8 @@ async function main(): Promise<void> {
 
     if (player.justHit) {
       player.justHit = false;
+      play('hurt');
+      haptic('heavy');
       hud.flashDamage();
       stage.addShake(1.4, 0.09);
     }
@@ -473,10 +515,14 @@ async function main(): Promise<void> {
         endingOutcome = 'death';
         endingTimer = 1.1;
         stage.addShake(3, 0.3);
+        play('death');
+        haptic('heavy');
       } else if (boss && boss.dead) {
         runEssence += 25; // boss kill bonus
         endingOutcome = 'victory';
         endingTimer = 1.1;
+        play('victory');
+        haptic('medium');
       }
     }
   });
